@@ -1,7 +1,0 @@
-Metadata-Version: 2.4
-Name: phasectl
-Version: 0.1.0
-Summary: Personal Claude dev orchestration — phase-gated engineering sessions
-Requires-Python: >=3.11
-Requires-Dist: typer>=0.12.0
-Requires-Dist: anthropic>=0.34.0
