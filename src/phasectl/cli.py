@@ -26,7 +26,7 @@ def _load_config() -> dict:
         config_file.write_text(
             '[api]\n'
             'model = "claude-sonnet-4-6"\n'
-            'compression_model = "claude-haiku-3-5"\n\n'
+            'compression_model = "claude-haiku-4-5-20251001"\n\n'
             '[storage]\n'
             'db_path = ""\n\n'
             '[defaults]\n'

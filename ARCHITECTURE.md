@@ -170,7 +170,7 @@ Created automatically on first run. Never stored: ANTHROPIC_API_KEY (env only).
 ```toml
 [api]
 model = "claude-sonnet-4-6"
-compression_model = "claude-haiku-3-5"
+compression_model = "claude-haiku-4-5-20251001"
 
 [storage]
 db_path = ""   # empty = XDG default (~/.config/phasectl/sessions.db)
