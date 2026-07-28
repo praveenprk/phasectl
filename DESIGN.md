@@ -22,7 +22,7 @@ logged, and RFC-026 scoping AgentNode identity work.
 - **`kuzu` (embedded graph) is M2 only** — M1 ships `SQLiteStore` only. The
   `AbstractStore` Protocol exists so that `KuzuStore` can be swapped in without
   touching any consumer code.
-- **All data local** under `~/.ctx/`
+- **All data local** under XDG config (`~/.config/phasectl/`)
 - **Compression always uses `claude-haiku-3-5`** — never the main model
 - **Zero Docker, zero daemons, zero servers**
 - **No placeholder functions, no TODO stubs** — every called function is implemented.
@@ -72,7 +72,7 @@ uncompressed turns, prepend as a system message to provide continuity.
 - Plugins or custom tool definitions
 - Tokenizer-aware estimation (e.g., `tiktoken`)
 - `KuzuStore` graph backend
-- Any form of persistence beyond `~/.ctx/`
+- Any form of persistence beyond `~/.config/phasectl/`
 
 ## Open Questions
 

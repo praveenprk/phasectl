@@ -1,5 +1,4 @@
 import typer
-from pathlib import Path
 import tomllib
 
 from .store import SQLiteStore
@@ -7,32 +6,35 @@ from .session import open_session, close_session, load_prior_session
 from .phases import load_phase, list_phases
 from .context import estimate_tokens, should_compress, compress_tail, build_injection_block
 from .api import chat as api_chat, compress as api_compress
+from .config import get_config_file, get_db_path
 
 
 app = typer.Typer()
-CONFIG_PATH = Path.home() / ".ctx" / "config.toml"
 
 
 def _load_config() -> dict:
-    if not CONFIG_PATH.exists():
-        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        CONFIG_PATH.write_text(
+    config_file = get_config_file()
+    if not config_file.exists():
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        config_file.write_text(
             '[api]\n'
             'model = "claude-sonnet-4-6"\n'
             'compression_model = "claude-haiku-3-5"\n\n'
             '[storage]\n'
-            'db_path = "~/.ctx/sessions.db"\n\n'
+            'db_path = ""\n\n'
             '[defaults]\n'
             'project = "contextos"\n'
             'window_tokens = 15000\n'
             'keep_last_turns = 3\n'
         )
-    with open(CONFIG_PATH, "rb") as f:
+    with open(config_file, "rb") as f:
         return tomllib.load(f)
 
 
 def _get_store(config: dict) -> SQLiteStore:
-    return SQLiteStore(config["storage"]["db_path"])
+    raw = config["storage"]["db_path"]
+    db = raw if raw else str(get_db_path())
+    return SQLiteStore(db)
 
 
 def _derive_current_phase(store: SQLiteStore, session_data: dict) -> str:
@@ -112,7 +114,7 @@ def chat(
 
     session_data = store.get_active_session(project)
     if not session_data:
-        typer.echo("No active session. Run 'ctx start' first.")
+        typer.echo("No active session. Run 'phasectl start' first.")
         raise typer.Exit(1)
 
     current_phase = _derive_current_phase(store, session_data)
@@ -175,7 +177,7 @@ def switch(
 
     session_data = store.get_active_session(project)
     if not session_data:
-        typer.echo("No active session. Run 'ctx start' first.")
+        typer.echo("No active session. Run 'phasectl start' first.")
         raise typer.Exit(1)
 
     try:

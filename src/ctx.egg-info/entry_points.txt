@@ -1,0 +1,2 @@
+[console_scripts]
+ctx = ctx.cli:app

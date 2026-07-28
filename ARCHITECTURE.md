@@ -33,7 +33,7 @@ phasectl/
 ```
 User runs: phasectl start --project contextos --phase orient
    │
-   ├─ cli.py: load config from ~/.ctx/config.toml
+   ├─ cli.py: load config from XDG config (~/.config/phasectl/config.toml)
    ├─ cli.py: check for active session (error if exists)
    ├─ cli.py: load phase TOML (phases/orient.toml)
    ├─ cli.py: check for prior closed session (store.get_last_session)
@@ -163,7 +163,7 @@ CREATE TABLE IF NOT EXISTS turns (
 );
 ```
 
-## Config schema (~/.ctx/config.toml)
+## Config schema (XDG: ~/.config/phasectl/config.toml)
 
 Created automatically on first run. Never stored: ANTHROPIC_API_KEY (env only).
 
@@ -173,7 +173,7 @@ model = "claude-sonnet-4-6"
 compression_model = "claude-haiku-3-5"
 
 [storage]
-db_path = "~/.ctx/sessions.db"
+db_path = ""   # empty = XDG default (~/.config/phasectl/sessions.db)
 
 [defaults]
 project = "contextos"
