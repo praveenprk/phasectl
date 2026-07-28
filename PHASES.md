@@ -1,4 +1,4 @@
-# ctx phases reference
+# phasectl phases reference
 
 Each phase is a TOML file under `phases/` defining who Claude is, how it behaves,
 what it can do, and when compression fires. Six phases total.

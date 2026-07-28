@@ -1,10 +1,10 @@
-# ctx architecture
+# phasectl architecture
 
 ## File structure
 
 ```
-ctx/
-├── pyproject.toml          # Pinned deps, entry point ctx=ctx.cli:app
+phasectl/
+├── pyproject.toml          # Pinned deps, entry point phasectl=phasectl.cli:app
 ├── DESIGN.md               # Intent, constraints, out-of-scope, open questions
 ├── PHASES.md               # Phase reference — all 6 phases documented
 ├── ARCHITECTURE.md         # This file
@@ -16,7 +16,7 @@ ctx/
 │   ├── validate.toml
 │   └── snapshot.toml
 └── src/
-    └── ctx/
+    └── phasectl/
         ├── __init__.py     # Package marker
         ├── cli.py          # typer app: start, chat, switch, close, status
         ├── api.py          # anthropic SDK wrapper: chat(), compress()
@@ -31,7 +31,7 @@ ctx/
 ## Data flow
 
 ```
-User runs: ctx start --project contextos --phase orient
+User runs: phasectl start --project contextos --phase orient
    │
    ├─ cli.py: load config from ~/.ctx/config.toml
    ├─ cli.py: check for active session (error if exists)
@@ -41,7 +41,7 @@ User runs: ctx start --project contextos --phase orient
    │       └─ build injection block (context.build_injection_block)
    └─ cli.py: create new session (session.open_session → store.create_session)
 
-User runs: ctx chat "message"
+User runs: phasectl chat "message"
    │
    ├─ cli.py: load config, load active session from store
    ├─ cli.py: load current phase config
@@ -59,18 +59,18 @@ User runs: ctx chat "message"
    ├─ cli.py: store assistant turn
    └─ cli.py: print response
 
-User runs: ctx switch --phase impl
+User runs: phasectl switch --phase impl
    ├─ load phase TOML, update in-memory current_phase
    └─ print phase identity
 
-User runs: ctx close
+User runs: phasectl close
    ├─ load snapshot phase TOML
    ├─ format uncompressed turns as text
    ├─ api.compress (haiku-3-5, snapshot prompt)
    ├─ store.close_session (summary, total_tokens, closing_phase)
    └─ print summary
 
-User runs: ctx status
+User runs: phasectl status
    ├─ check active session → show project, phase, session id, token count
    └─ if none → show last closed session date or "no session"
 ```
@@ -195,7 +195,7 @@ keep_last_turns = 3
 
 ## Context injection mechanics
 
-On `ctx start` with a prior session:
+On `phasectl start` with a prior session:
 1. `load_prior_session()` queries `get_last_session(project)`.
 2. Gets `final_summary` from the session record.
 3. Gets last 3 uncompressed turns via `get_last_uncompressed_turns(session_id, 3)`.
@@ -214,25 +214,25 @@ On `ctx start` with a prior session:
 ## Phase lifecycle
 
 ```
-ctx start --phase orient
+phasectl start --phase orient
    │
-   ├── orient ──ctx switch──► ideate
+   ├── orient ──phasectl switch──► ideate
    │                            │
-   │                            ├── ctx switch ──► design
+   │                            ├── phasectl switch ──► design
    │                            │                    │
-   │                            │                    ├── ctx switch ──► impl
+   │                            │                    ├── phasectl switch ──► impl
    │                            │                    │                    │
-   │                            │                    │                    ├── ctx switch ──► validate
+   │                            │                    │                    ├── phasectl switch ──► validate
    │                            │                    │                    │
-   │                            │                    │                    └── ctx close ──► snapshot (auto)
+   │                            │                    │                    └── phasectl close ──► snapshot (auto)
    │                            │                    │
-   │                            │                    └── ctx switch ──► impl ...
+   │                            │                    └── phasectl switch ──► impl ...
    │                            │
-   │                            └── ctx switch ──► orient (cycle back)
+   │                            └── phasectl switch ──► orient (cycle back)
    │
-   └── ctx close ──► snapshot (auto, uses haiku to summarise all turns)
+   └── phasectl close ──► snapshot (auto, uses haiku to summarise all turns)
 ```
 
 Phases are not a linear pipeline. The engineer switches freely. Each turn records
-the phase it was taken in. `ctx close` always uses the `snapshot` prompt to compress
+the phase it was taken in. `phasectl close` always uses the `snapshot` prompt to compress
 the session into a final summary, regardless of the current phase.

@@ -1,8 +1,8 @@
-# ctx — personal Claude dev orchestration
+# phasectl — personal Claude dev orchestration
 
 ## Intent
 
-`ctx` is a lightweight CLI tool that wraps the Anthropic API with phase-gated context
+`phasectl` is a lightweight CLI tool that wraps the Anthropic API with phase-gated context
 management for focused, disciplined engineering sessions on a single project. It runs
 in the terminal, stores everything locally in SQLite, and enforces phase boundaries
 so that Claude behaves differently depending on whether you are ideating, designing,
@@ -30,11 +30,11 @@ logged, and RFC-026 scoping AgentNode identity work.
 
 ## Core workflow
 
-1. `ctx start --project <name> --phase <phase>` — open a session
-2. `ctx chat "message"` — send a turn to Claude
-3. `ctx switch --phase <phase>` — change phase mid-session
-4. `ctx close` — compress session, persist summary, store to SQLite
-5. `ctx status` — show current session state
+1. `phasectl start --project <name> --phase <phase>` — open a session
+2. `phasectl chat "message"` — send a turn to Claude
+3. `phasectl switch --phase <phase>` — change phase mid-session
+4. `phasectl close` — compress session, persist summary, store to SQLite
+5. `phasectl status` — show current session state
 
 ## Token budget & compression
 
@@ -50,7 +50,7 @@ Token estimation: `len(content) // 4`. Good enough for M1. No tokenizer dependen
 
 ## Context injection
 
-On `ctx start` with a prior session, load `final_summary` + the last 3 raw
+On `phasectl start` with a prior session, load `final_summary` + the last 3 raw
 uncompressed turns, prepend as a system message to provide continuity.
 
 ## The six phases
@@ -76,16 +76,16 @@ uncompressed turns, prepend as a system message to provide continuity.
 
 ## Open Questions
 
-1. **API key validation** — should `ctx start` / `ctx chat` fail fast if
+1. **API key validation** — should `phasectl start` / `phasectl chat` fail fast if
    `ANTHROPIC_API_KEY` is unset, or should it defer to the SDK's own error? **Decision:
    fail fast in `api.py` init.**
 
-2. **`ctx status` with no active session** — should it show "no active session" or
+2. **`phasectl status` with no active session** — should it show "no active session" or
    attempt to show the last closed session? **Decision: show "no active session" if
    none open, plus last closed session date if one exists.**
 
-3. **Project override on `ctx start`** — if a session is already open for project A
-   and user runs `ctx start` for project B, should it auto-close A or error?
+3. **Project override on `phasectl start`** — if a session is already open for project A
+   and user runs `phasectl start` for project B, should it auto-close A or error?
    **Decision: error with "Session already active for project <A>. Close it first."**
 
 4. **Turn limit for compression** — is compression triggered solely by token budget,
@@ -93,5 +93,5 @@ uncompressed turns, prepend as a system message to provide continuity.
    **Decision: compress only when turn count ≥ 3 AND over budget, to avoid
    compressing single-turn sessions into nothing.**
 
-5. **`ctx chat` without active session** — should it auto-create a session with
-   defaults, or error? **Decision: error asking user to run `ctx start` first.**
+5. **`phasectl chat` without active session** — should it auto-create a session with
+   defaults, or error? **Decision: error asking user to run `phasectl start` first.**
