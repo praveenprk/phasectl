@@ -1,102 +1,87 @@
 from typing import Any
-from .mcp_client import MCPClient, MCPNotAvailableError, MCPTimeoutError
+
+from .mcp_client import MCPClient, MCPNotAvailableError
 
 
 JCODEMUNCH_TOOLS = [
     {
         "name": "search_symbols",
-        "description": "Search for symbols by name or pattern. Returns matching symbols with file, kind, and signature.",
-        "inputSchema": {
+        "description": "Find symbols by name pattern, kind, or file path. Returns matching symbols with name, kind, file, and signature.",
+        "input_schema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Symbol name or pattern to search for"},
-                "project": {"type": "string", "description": "Project name"},
+                "pattern": {"type": "string", "description": "Symbol name pattern (supports wildcards)"},
+                "kind": {"type": "string", "enum": ["function", "class", "method", "variable", "type"], "description": "Symbol kind filter"},
+                "file_pattern": {"type": "string", "description": "File path pattern filter"},
                 "limit": {"type": "integer", "default": 20, "description": "Max results"},
             },
-            "required": ["query", "project"],
+            "required": ["pattern"],
         },
     },
     {
         "name": "get_symbol_source",
-        "description": "Get full source code of a symbol by its qualified name.",
-        "inputSchema": {
+        "description": "Get exact source code for a symbol at byte precision. Returns full function/class definition with body.",
+        "input_schema": {
             "type": "object",
             "properties": {
-                "symbol_name": {"type": "string", "description": "Qualified symbol name (e.g., 'agent_node.AgentNode.set_identity')"},
-                "project": {"type": "string", "description": "Project name"},
+                "symbol": {"type": "string", "description": "Fully qualified symbol name (e.g., 'module.Class.method')"},
             },
-            "required": ["symbol_name", "project"],
+            "required": ["symbol"],
         },
     },
     {
-        "name": "get_callers",
-        "description": "Find all callers of a function/method.",
-        "inputSchema": {
+        "name": "get_file_outline",
+        "description": "Get file structure: imports, classes, functions with signatures only. No bodies.",
+        "input_schema": {
             "type": "object",
             "properties": {
-                "symbol_name": {"type": "string", "description": "Qualified symbol name"},
-                "project": {"type": "string", "description": "Project name"},
-                "limit": {"type": "integer", "default": 30},
+                "file_path": {"type": "string", "description": "Path to file relative to project root"},
             },
-            "required": ["symbol_name", "project"],
+            "required": ["file_path"],
+        },
+    },
+    {
+        "name": "assemble_task_context",
+        "description": "Natural language task -> token-budgeted context bundle. Returns relevant symbols, files, and relationships.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task": {"type": "string", "description": "Task description in natural language"},
+                "token_budget": {"type": "integer", "default": 8000, "description": "Max tokens for context bundle"},
+            },
+            "required": ["task"],
         },
     },
     {
         "name": "get_blast_radius",
-        "description": "Analyze impact of changing a symbol - finds downstream dependents.",
-        "inputSchema": {
+        "description": "Find all callers and dependents of a symbol. What breaks if this changes?",
+        "input_schema": {
             "type": "object",
             "properties": {
-                "symbol_name": {"type": "string", "description": "Qualified symbol name"},
-                "project": {"type": "string", "description": "Project name"},
-                "depth": {"type": "integer", "default": 3},
+                "symbol": {"type": "string", "description": "Fully qualified symbol name"},
+                "depth": {"type": "integer", "default": 2, "description": "Call graph depth"},
             },
-            "required": ["symbol_name", "project"],
+            "required": ["symbol"],
         },
     },
     {
         "name": "get_untested_symbols",
-        "description": "Find untested or undertested symbols in a file or module.",
-        "inputSchema": {
+        "description": "Find symbols in a file/module with no test reachability. Returns gaps for test planning.",
+        "input_schema": {
             "type": "object",
             "properties": {
-                "file_path": {"type": "string", "description": "File path relative to project root"},
-                "project": {"type": "string", "description": "Project name"},
+                "file_path": {"type": "string", "description": "File path to analyze"},
+                "project_root": {"type": "string", "description": "Project root for test discovery"},
             },
-            "required": ["file_path", "project"],
-        },
-    },
-    {
-        "name": "index_project",
-        "description": "Index a project directory for symbol search.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "project": {"type": "string", "description": "Project name"},
-                "path": {"type": "string", "description": "Absolute path to project root"},
-            },
-            "required": ["project", "path"],
+            "required": ["file_path"],
         },
     },
 ]
 
 
 PHASE_TOOLS = {
-    "orient": [],
-    "ideate": [],
-    "design": [],
-    "impl": [
-        "search_symbols",
-        "get_symbol_source",
-        "get_callers",
-        "get_blast_radius",
-    ],
-    "validate": [
-        "search_symbols",
-        "get_symbol_source",
-        "get_untested_symbols",
-    ],
-    "snapshot": [],
+    "impl": ["search_symbols", "get_symbol_source", "get_file_outline", "assemble_task_context", "get_blast_radius"],
+    "validate": ["search_symbols", "get_symbol_source", "get_untested_symbols"],
 }
 
 
@@ -106,29 +91,30 @@ def get_phase_tools(phase: str) -> list[dict]:
 
 
 class ToolExecutor:
-    def __init__(self, mcp_command: list[str] = None):
-        self.mcp_command = mcp_command or ["jcodemunch-mcp", "stdio"]
+    def __init__(self):
         self._client: MCPClient | None = None
 
-    def _ensure_client(self) -> MCPClient:
+    def _get_client(self) -> MCPClient | None:
         if self._client is None:
-            self._client = MCPClient(self.mcp_command)
-            self._client.__enter__()
-            self._client.initialize()
+            try:
+                self._client = MCPClient(["jcodemunch-mcp"])
+                self._client.__enter__()
+            except Exception:
+                return None
         return self._client
 
-    def execute(self, tool_name: str, arguments: dict) -> str:
+    def execute(self, name: str, arguments: dict) -> str:
+        client = self._get_client()
+        if client is None:
+            return "[jCodeMunch unavailable — answer from context only]"
         try:
-            client = self._ensure_client()
-            return client.call_tool(tool_name, arguments)
+            return client.call_tool(name, arguments)
         except MCPNotAvailableError:
-            return f"[ERROR] jCodeMunch MCP not available. Is 'jcodemunch-mcp' installed and in PATH?"
-        except MCPTimeoutError:
-            return f"[ERROR] jCodeMunch request timed out"
+            return "[jCodeMunch unavailable — answer from context only]"
         except Exception as e:
-            return f"[ERROR] Tool execution failed: {e}"
+            return f"[jCodeMunch error: {e}]"
 
-    def close(self) -> None:
+    def close(self):
         if self._client:
             self._client.__exit__(None, None, None)
             self._client = None
