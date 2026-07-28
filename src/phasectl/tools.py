@@ -1,3 +1,4 @@
+import os
 from typing import Any
 
 from .mcp_client import MCPClient, MCPNotAvailableError
@@ -74,6 +75,18 @@ JCODEMUNCH_TOOLS = [
                 "project_root": {"type": "string", "description": "Project root for test discovery"},
             },
             "required": ["file_path"],
+        },
+    },
+    {
+        "name": "index_project",
+        "description": "Index a project directory for symbol search.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project": {"type": "string", "description": "Project name"},
+                "path": {"type": "string", "description": "Absolute path to project root"},
+            },
+            "required": ["project", "path"],
         },
     },
 ]

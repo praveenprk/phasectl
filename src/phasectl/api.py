@@ -1,10 +1,12 @@
 import os
-from typing import Any
+from typing import NotRequired, TypedDict
 
 from anthropic import Anthropic
 from anthropic import NOT_GIVEN
 
 from .tools import ToolExecutor, get_phase_tools
+from .graph import KuzuStore
+from .config import get_kuzu_path
 
 
 _client: Anthropic | None = None
@@ -20,71 +22,59 @@ def _get_client() -> Anthropic:
     return _client
 
 
-def _extract_text(content: list) -> str:
-    parts = []
-    for block in content:
-        if block.type == "text":
-            parts.append(block.text)
-    return "".join(parts)
-
-
-def _format_tool_results(tool_results: list[dict]) -> list[dict]:
-    formatted = []
-    for tr in tool_results:
-        formatted.append({
-            "type": "tool_result",
-            "tool_use_id": tr["tool_use_id"],
-            "content": tr["content"],
-        })
-    return formatted
+class ToolResult(TypedDict):
+    type: str
+    tool_use_id: str
+    content: str
 
 
 def chat(
     messages: list[dict],
-    system_prompt: str,
-    temperature: float,
+    phase_config,
     app_config: dict,
-    phase: str = "impl",
 ) -> str:
     client = _get_client()
     model = app_config["api"]["model"]
+    tools = get_phase_tools(phase_config.name)
 
-    tools = get_phase_tools(phase)
     tool_executor = ToolExecutor()
 
-    try:
-        while True:
-            response = client.messages.create(
-                model=model,
-                system=system_prompt,
-                messages=messages,
-                tools=tools if tools else NOT_GIVEN,
-                temperature=temperature,
-                max_tokens=4096,
-            )
+    while True:
+        response = client.messages.create(
+            model=model,
+            system=phase_config.system_prompt,
+            messages=messages,
+            tools=tools if tools else NOT_GIVEN,
+            temperature=phase_config.temperature,
+            max_tokens=4096,
+        )
 
-            if response.stop_reason == "tool_use":
-                tool_results = []
-                for block in response.content:
-                    if block.type == "tool_use":
-                        result = tool_executor.execute(block.name, block.input)
-                        tool_results.append({
-                            "tool_use_id": block.id,
-                            "content": result,
-                        })
+        if response.stop_reason == "tool_use":
+            tool_results: list[ToolResult] = []
+            assistant_content = []
 
-                messages.append({"role": "assistant", "content": response.content})
-                messages.append({"role": "user", "content": _format_tool_results(tool_results)})
-                continue
+            for block in response.content:
+                if block.type == "tool_use":
+                    result = tool_executor.execute(block.name, block.input)
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                    })
+                assistant_content.append(block)
 
-            return _extract_text(response.content)
-    finally:
-        tool_executor.close()
+            messages.append({"role": "assistant", "content": assistant_content})
+            messages.append({"role": "user", "content": tool_results})
+            continue
+
+        text_parts = []
+        for block in response.content:
+            if block.type == "text":
+                text_parts.append(block.text)
+        return "\n".join(text_parts)
 
 
-def compress(
-    turns_text: str, app_config: dict, system_prompt: str | None = None
-) -> str:
+def compress(turns_text: str, app_config: dict, system_prompt: str | None = None) -> str:
     client = _get_client()
     model = app_config["api"]["compression_model"]
 
@@ -103,3 +93,42 @@ def compress(
         max_tokens=1024,
     )
     return response.content[0].text
+
+
+def extract_rfcs_and_decisions(summary: str) -> tuple[list[str], list[str]]:
+    import re
+    rfcs = [f"RFC-{m}" for m in re.findall(r"RFC-(\d+)", summary)]
+    decisions = [f"DECISION-{m}" for m in re.findall(r"DECISION-(\d+)", summary)]
+    return rfcs, decisions
+
+
+def persist_session_graph(
+    session_id: str,
+    project: str,
+    summary: str,
+    created_at: str,
+    app_config: dict,
+) -> None:
+    kuzu = _get_kuzu_store(app_config)
+    if not kuzu:
+        return
+
+    kuzu.save_session_node(session_id, project, created_at)
+
+    rfcs, decisions = extract_rfcs_and_decisions(summary)
+    for rfc_id in rfcs:
+        kuzu.save_rfc(rfc_id, project, "in-progress", "")
+        kuzu.link_session_rfc(session_id, rfc_id)
+
+    for decision_id in decisions:
+        kuzu.save_decision(decision_id, project, "")
+        kuzu.link_session_decision(session_id, decision_id)
+
+    kuzu.close()
+
+
+def _get_kuzu_store(config: dict) -> KuzuStore | None:
+    try:
+        return KuzuStore(get_kuzu_path(config))
+    except Exception:
+        return None
