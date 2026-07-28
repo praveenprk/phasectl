@@ -2,13 +2,20 @@ import sys
 import json
 import typer
 import tomllib
+import os
 
 from .store import SQLiteStore
 from .session import open_session, close_session, load_prior_session
 from .phases import load_phase, list_phases
 from .context import estimate_tokens, should_compress, compress_tail, build_injection_block
-from .api import chat as api_chat, compress as api_compress
-from .config import get_config_file, get_db_path
+from .api import (
+    chat as api_chat,
+    compress as api_compress,
+    persist_session_graph,
+    extract_rfcs_and_decisions,
+)
+from .config import get_config_file, get_db_path, get_index_path, set_index_path
+from .tools import ToolExecutor
 
 
 app = typer.Typer()
@@ -29,6 +36,8 @@ def _load_config() -> dict:
             'compression_model = "claude-haiku-4-5-20251001"\n\n'
             '[storage]\n'
             'db_path = ""\n\n'
+            '[graph]\n'
+            'kuzu_path = ""\n\n'
             '[defaults]\n'
             'project = "contextos"\n'
             'window_tokens = 15000\n'
@@ -165,8 +174,7 @@ def chat(
     try:
         response = api_chat(
             messages=messages,
-            system_prompt=system_prompt,
-            temperature=phase_config.temperature,
+            phase_config=phase_config,
             app_config=config,
         )
     except Exception as e:
@@ -261,6 +269,8 @@ def close(
 
     close_session(store, session_data["id"], current_phase, summary, total_tokens)
 
+    persist_session_graph(session_data["id"], project, summary, session_data["created_at"], config)
+
     print(f"{session_data['id'][:8]} {len(turns)}→1 {total_tokens}t")
 
 
@@ -325,6 +335,108 @@ def status(
                 }))
             else:
                 print("No active session.")
+
+
+@app.command()
+def index(
+    project: str = typer.Option("contextos", "--project", "-p", help="Project name"),
+    path: str = typer.Option(..., "--path", help="Path to project root"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress diagnostic output"),
+):
+    """Index a project for symbol search via jCodeMunch."""
+    if not os.path.exists(path):
+        print(f"Path does not exist: {path}", file=sys.stderr)
+        raise typer.Exit(1)
+
+    abs_path = os.path.abspath(path)
+    _diag(f"Indexing {abs_path} as {project}...", quiet=quiet)
+
+    tool_executor = ToolExecutor()
+    try:
+        result = tool_executor.execute("index_project", {"project": project, "path": abs_path})
+    finally:
+        tool_executor.close()
+
+    if "ERROR" in result:
+        print(result, file=sys.stderr)
+        raise typer.Exit(1)
+
+    set_index_path(project, abs_path)
+    print(result)
+
+
+@app.command()
+def query(
+    symbol: str = typer.Argument(..., help="Symbol name or pattern to search for"),
+    project: str = typer.Option("contextos", "--project", "-p", help="Project name"),
+    json_flag: bool = typer.Option(False, "--json", help="Output JSON"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress diagnostic output"),
+):
+    """Query symbols via jCodeMunch (no active session required)."""
+    index_path = get_index_path(project)
+    if not index_path:
+        print(f"no index for {project}. run: phasectl index --project {project} --path <path>", file=sys.stderr)
+        raise typer.Exit(4)
+
+    tool_executor = ToolExecutor()
+    try:
+        result = tool_executor.execute("search_symbols", {"query": symbol, "project": project})
+    finally:
+        tool_executor.close()
+
+    if "ERROR" in result:
+        print(result, file=sys.stderr)
+        raise typer.Exit(4)
+
+    if json_flag:
+        print(result)
+    else:
+        for line in result.strip().split("\n"):
+            if line.strip():
+                print(line)
+
+
+@app.command()
+def graph(
+    project: str = typer.Option("contextos", "--project", "-p", help="Project name"),
+    json_flag: bool = typer.Option(False, "--json", help="Output JSON"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress diagnostic output"),
+):
+    """Query session graph from Kuzu (no active session required)."""
+    from .config import get_kuzu_path
+    from .graph import KuzuStore
+
+    config = _load_config()
+    kuzu_path = get_kuzu_path(config)
+
+    if not os.path.exists(kuzu_path):
+        if json_flag:
+            print(json.dumps({"sessions": []}))
+        else:
+            print("(empty graph)")
+        return
+
+    try:
+        kuzu = KuzuStore(str(kuzu_path))
+        result = kuzu.get_project_graph(project)
+        kuzu.close()
+    except Exception as e:
+        print(f"Graph query failed: {e}", file=sys.stderr)
+        raise typer.Exit(1)
+
+    if json_flag:
+        print(json.dumps(result))
+    else:
+        sessions = result.get("sessions", [])
+        if not sessions:
+            print("(empty graph)")
+            return
+        for s in sessions:
+            print(f"Session {s['id']} ({s['created_at'][:10]})")
+            for rfc in s.get("rfcs", []):
+                print(f"  RFC: {rfc['id']} [{rfc['status']}] {rfc['title']}")
+            for dec in s.get("decisions", []):
+                print(f"  DECISION: {dec['id']} {dec['summary']}")
 
 
 if __name__ == "__main__":
