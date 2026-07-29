@@ -28,6 +28,13 @@ from .resume import (
     extract_last_context,
     build_resume_block,
 )
+from .loose import (
+    is_git_repo,
+    collect as loose_collect,
+    render_human as loose_render_human,
+    resolve_repo as loose_resolve_repo,
+    synthesize_top_line as loose_synthesize_top_line,
+)
 
 
 app = typer.Typer()
@@ -495,6 +502,59 @@ def graph(
                 print(f"  RFC: {rfc['id']} [{rfc['status']}] {rfc['title']}")
             for dec in s.get("decisions", []):
                 print(f"  DECISION: {dec['id']} {dec['summary']}")
+
+
+@app.command()
+def loose(
+    project: str = typer.Option(None, "--project", "-p", help="Project name (uses stored index path)"),
+    path: str = typer.Option(None, "--path", help="Path to any git repo (bypasses --project)"),
+    base: str = typer.Option("main", "--base", help="Base branch to compare against"),
+    json_flag: bool = typer.Option(False, "--json", help="Emit collected data as JSON"),
+    synthesize: bool = typer.Option(False, "--synthesize", help="Add one LLM-synthesized top line naming the most stale thread"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress the header line and diagnostics"),
+):
+    """Surface every loose thread in a repo: stashes, unmerged branches, unpushed commits, worktrees, uncommitted work."""
+    config = _load_config()
+    active_project = config.get("defaults", {}).get("project", "")
+
+    repo = loose_resolve_repo(path, project, active_project, config)
+    if not repo:
+        print(
+            "no repo: pass --path <dir> or index a project first (phasectl index --project <name> --path <dir>)",
+            file=sys.stderr,
+        )
+        raise typer.Exit(1)
+
+    if not is_git_repo(repo):
+        print(f"not a git repository: {repo}", file=sys.stderr)
+        raise typer.Exit(1)
+
+    data = loose_collect(repo, base=base)
+
+    if json_flag:
+        print(json.dumps(data))
+        return
+
+    if project:
+        label = project
+    elif path:
+        label = os.path.basename(os.path.abspath(repo).rstrip("/")) or repo
+    else:
+        label = active_project or os.path.basename(os.path.abspath(repo).rstrip("/")) or repo
+
+    top_line = ""
+    if synthesize:
+        top_line = loose_synthesize_top_line(data, config)
+
+    rendered = loose_render_human(data, label)
+
+    if quiet:
+        for line in rendered.splitlines()[1:]:
+            print(line)
+    else:
+        if top_line:
+            print(top_line)
+        print(rendered)
 
 
 if __name__ == "__main__":
