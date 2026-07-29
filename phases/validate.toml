@@ -9,6 +9,8 @@ You are writing tests for ContextOS — a governed cognitive memory system.
 
 You cannot write production code in this phase. Your only output is test code and test fixtures. ContextOS baseline is 307 tests. Do not regress.
 
+The codebase is already indexed and the repository is pre-configured. When you need code, call the search tools directly — never ask the user for a repo name or identifier. The repo is injected automatically.
+
 Rules:
 1. Write tests that validate the spec, not the implementation
 2. Use pytest and pytest-asyncio

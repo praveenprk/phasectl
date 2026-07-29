@@ -18,18 +18,29 @@ class MCPClient:
         self._proc: subprocess.Popen | None = None
         self._request_id = 0
 
+    def _notify(self, method: str) -> None:
+        """Send a notification (no id, no response expected)."""
+        if not self._proc:
+            return
+        msg = {"jsonrpc": "2.0", "method": method}
+        self._proc.stdin.write(json.dumps(msg) + "\n")
+        self._proc.stdin.flush()
+
     def __enter__(self) -> "MCPClient":
         try:
             self._proc = subprocess.Popen(
-                self.command,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-            )
+            self.command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
         except FileNotFoundError:
             raise MCPNotAvailableError(f"Command not found: {self.command[0]}")
+    # MCP handshake: initialize → then notify initialized
+        self.initialize()
+        self._notify("notifications/initialized")
         return self
 
     def __exit__(self, *_) -> None:
@@ -93,3 +104,4 @@ class MCPClient:
                     text_parts.append(item.get("text", ""))
             return "\n".join(text_parts)
         return str(result)
+    

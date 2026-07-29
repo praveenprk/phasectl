@@ -176,6 +176,7 @@ def chat(
             messages=messages,
             phase_config=phase_config,
             app_config=config,
+            project=project,
         )
     except Exception as e:
         print(f"API error: {e}", file=sys.stderr)
@@ -351,9 +352,9 @@ def index(
     abs_path = os.path.abspath(path)
     _diag(f"Indexing {abs_path} as {project}...", quiet=quiet)
 
-    tool_executor = ToolExecutor()
+    tool_executor = ToolExecutor(project=project)
     try:
-        result = tool_executor.execute("index_project", {"project": project, "path": abs_path})
+        result = tool_executor.execute("index_project", {"path": abs_path})
     finally:
         tool_executor.close()
 
@@ -378,9 +379,9 @@ def query(
         print(f"no index for {project}. run: phasectl index --project {project} --path <path>", file=sys.stderr)
         raise typer.Exit(4)
 
-    tool_executor = ToolExecutor()
+    tool_executor = ToolExecutor(project=project)
     try:
-        result = tool_executor.execute("search_symbols", {"query": symbol, "project": project})
+        result = tool_executor.execute("search_symbols", {"query": symbol})
     finally:
         tool_executor.close()
 

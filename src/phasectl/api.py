@@ -32,12 +32,13 @@ def chat(
     messages: list[dict],
     phase_config,
     app_config: dict,
+    project: str = "",
 ) -> str:
     client = _get_client()
     model = app_config["api"]["model"]
     tools = get_phase_tools(phase_config.name)
 
-    tool_executor = ToolExecutor()
+    tool_executor = ToolExecutor(project=project)
 
     while True:
         response = client.messages.create(
