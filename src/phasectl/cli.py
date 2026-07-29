@@ -14,8 +14,20 @@ from .api import (
     persist_session_graph,
     extract_rfcs_and_decisions,
 )
-from .config import get_config_file, get_db_path, get_index_path, set_index_path
+from .config import (
+    get_config_file,
+    get_db_path,
+    get_index_path,
+    set_index_path,
+    get_claude_code_projects_dir,
+)
 from .tools import ToolExecutor
+from .resume import (
+    get_git_state,
+    find_claude_code_session,
+    extract_last_context,
+    build_resume_block,
+)
 
 
 app = typer.Typer()
@@ -67,6 +79,9 @@ def start(
     project: str = typer.Option("contextos", "--project", "-p", help="Project name"),
     phase: str = typer.Option("orient", "--phase", help="Starting phase"),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress diagnostic output"),
+    no_fuse: bool = typer.Option(
+        False, "--no-fuse", help="Skip git + Claude Code fusion in orient (session summary only)"
+    ),
 ):
     """Start a new session."""
     config = _load_config()
@@ -92,6 +107,40 @@ def start(
         raise typer.Exit(1)
 
     prior = load_prior_session(store, project)
+    resume_block = ""
+    if phase == "orient" and not no_fuse:
+        session_summary = ""
+        if prior:
+            session_summary = (prior[0].get("final_summary") or "").strip()
+
+        repo_path_obj = get_index_path(project, config)
+        repo_path = str(repo_path_obj) if repo_path_obj else ""
+        git_state: dict = {}
+        cc_context = ""
+        if repo_path:
+            try:
+                git_state = get_git_state(repo_path)
+            except Exception as e:
+                _diag(f"[orient] git introspection skipped: {e}", quiet=quiet)
+            try:
+                cc_dir = get_claude_code_projects_dir(config)
+                cc_path = find_claude_code_session(repo_path, cc_dir)
+                if cc_path:
+                    cc_context = extract_last_context(cc_path)
+            except Exception as e:
+                _diag(f"[orient] Claude Code lookup skipped: {e}", quiet=quiet)
+        else:
+            _diag(
+                f"[orient] no indexed path for '{project}' — fusion limited to session summary.",
+                quiet=quiet,
+            )
+
+        try:
+            resume_block = build_resume_block(git_state, session_summary, cc_context, config)
+        except Exception as e:
+            _diag(f"[orient] synthesis failed: {e}", quiet=quiet)
+            resume_block = ""
+
     if prior:
         session_data, turns = prior
         summary = session_data.get("final_summary", "") or ""
@@ -99,11 +148,17 @@ def start(
         close_date = session_data.get("closed_at", "unknown")
         if close_date != "unknown":
             close_date = close_date[:16]
-        _diag(
-            f"Prior session: {close_date}. Phase at close: {close_phase}.\n"
-            f"Summary: {summary}",
-            quiet=quiet,
-        )
+        if not resume_block:
+            _diag(
+                f"Prior session: {close_date}. Phase at close: {close_phase}.\n"
+                f"Summary: {summary}",
+                quiet=quiet,
+            )
+        else:
+            _diag(
+                f"Prior session: {close_date}. Phase at close: {close_phase}.",
+                quiet=quiet,
+            )
 
         injection = build_injection_block(session_data, turns)
         session = open_session(store, project, phase)
@@ -121,6 +176,8 @@ def start(
         )
         session = open_session(store, project, phase)
 
+    if resume_block:
+        print(resume_block)
     print(f"session opened: {session.id[:8]} {phase}")
 
 

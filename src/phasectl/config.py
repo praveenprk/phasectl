@@ -34,6 +34,12 @@ def get_kuzu_path(config: dict | None = None) -> Path:
     return get_config_dir() / "graph.kuzu"
 
 
+def get_claude_code_projects_dir(config: dict | None = None) -> str:
+    if config is None:
+        config = _load_config()
+    return config.get("claude_code", {}).get("projects_dir", "") or ""
+
+
 def get_index_path(project: str, config: dict | None = None) -> Path | None:
     if config is None:
         config = _load_config()
