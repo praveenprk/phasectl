@@ -5,8 +5,8 @@ from anthropic import Anthropic
 from anthropic import NOT_GIVEN
 
 from .tools import ToolExecutor, get_phase_tools
-from .graph import KuzuStore
-from .config import get_kuzu_path
+from .graph import GraphStore
+from .config import get_graph_path
 
 
 _client: Anthropic | None = None
@@ -110,26 +110,26 @@ def persist_session_graph(
     created_at: str,
     app_config: dict,
 ) -> None:
-    kuzu = _get_kuzu_store(app_config)
-    if not kuzu:
+    store = _get_graph_store(app_config)
+    if not store:
         return
 
-    kuzu.save_session_node(session_id, project, created_at)
+    store.save_session_node(session_id, project, created_at)
 
     rfcs, decisions = extract_rfcs_and_decisions(summary)
     for rfc_id in rfcs:
-        kuzu.save_rfc(rfc_id, project, "in-progress", "")
-        kuzu.link_session_rfc(session_id, rfc_id)
+        store.save_rfc(rfc_id, project, "in-progress", "")
+        store.link_session_rfc(session_id, rfc_id)
 
     for decision_id in decisions:
-        kuzu.save_decision(decision_id, project, "")
-        kuzu.link_session_decision(session_id, decision_id)
+        store.save_decision(decision_id, project, "")
+        store.link_session_decision(session_id, decision_id)
 
-    kuzu.close()
+    store.close()
 
 
-def _get_kuzu_store(config: dict) -> KuzuStore | None:
+def _get_graph_store(config: dict) -> GraphStore | None:
     try:
-        return KuzuStore(get_kuzu_path(config))
+        return GraphStore(str(get_graph_path(config)))
     except Exception:
         return None

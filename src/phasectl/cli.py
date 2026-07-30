@@ -57,7 +57,7 @@ def _load_config() -> dict:
             '[storage]\n'
             'db_path = ""\n\n'
             '[graph]\n'
-            'kuzu_path = ""\n\n'
+            'path = ""\n\n'
             '[defaults]\n'
             'project = "contextos"\n'
             'window_tokens = 15000\n'
@@ -488,23 +488,23 @@ def graph(
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress diagnostic output"),
 ):
     """Query session graph from Kuzu (no active session required)."""
-    from .config import get_kuzu_path
-    from .graph import KuzuStore
+    from .config import get_graph_path
+    from .graph import GraphStore
 
     config = _load_config()
-    kuzu_path = get_kuzu_path(config)
+    graph_path = get_graph_path(config)
 
-    if not os.path.exists(kuzu_path):
+    if not os.path.exists(graph_path):
         if json_flag:
             print(json.dumps({"sessions": []}))
         else:
-            print("(empty graph)")
+            print("(no sessions closed yet — graph will populate on first `phasectl close`)")
         return
 
     try:
-        kuzu = KuzuStore(str(kuzu_path))
-        result = kuzu.get_project_graph(project)
-        kuzu.close()
+        store = GraphStore(str(graph_path))
+        result = store.get_project_graph(project)
+        store.close()
     except Exception as e:
         print(f"Graph query failed: {e}", file=sys.stderr)
         raise typer.Exit(1)
