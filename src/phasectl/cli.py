@@ -35,6 +35,7 @@ from .loose import (
     resolve_repo as loose_resolve_repo,
     synthesize_top_line as loose_synthesize_top_line,
 )
+from .seed import build_seed_block
 
 
 app = typer.Typer()
@@ -88,6 +89,9 @@ def start(
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress diagnostic output"),
     no_fuse: bool = typer.Option(
         False, "--no-fuse", help="Skip git + Claude Code fusion in orient (session summary only)"
+    ),
+    seed: list[str] = typer.Option(
+        None, "--seed", help="Prime the session with a text file's gist (repeatable)"
     ),
 ):
     """Start a new session."""
@@ -182,6 +186,22 @@ def start(
             quiet=quiet,
         )
         session = open_session(store, project, phase)
+
+    seed_paths = seed or []
+    if seed_paths:
+        seed_block = build_seed_block(
+            seed_paths,
+            config,
+            diag=lambda msg: _diag(msg, quiet=quiet),
+        )
+        if seed_block:
+            store.add_turn(
+                session_id=session.id,
+                phase=phase,
+                role="system",
+                content=seed_block,
+                token_estimate=estimate_tokens(seed_block),
+            )
 
     if resume_block:
         print(resume_block)
