@@ -25,13 +25,17 @@ def get_db_path() -> Path:
     return get_config_dir() / "sessions.db"
 
 
-def get_kuzu_path(config: dict | None = None) -> Path:
+def get_graph_path(config: dict | None = None) -> Path:
     if config is None:
         config = _load_config()
-    raw = config.get("graph", {}).get("kuzu_path", "")
+    graph_cfg = config.get("graph", {})
+    raw = graph_cfg.get("path", "") or graph_cfg.get("kuzu_path", "")
     if raw:
         return Path(os.path.expanduser(raw))
-    return get_config_dir() / "graph.kuzu"
+    return get_config_dir() / "graph.json"
+
+
+get_kuzu_path = get_graph_path
 
 
 def get_claude_code_projects_dir(config: dict | None = None) -> str:
