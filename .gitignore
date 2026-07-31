@@ -2,4 +2,6 @@ __pycache__/
 *.pyc
 *.egg-info/
 .venv/
+build/
+dist/
 chat1.txt
