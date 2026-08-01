@@ -1,168 +1,128 @@
-import os
+"""MCP tool discovery and dispatch.
+
+At connect time we call `tools/list` and expose whatever the server
+offers — no hardcoded tool names, no assumed schemas, no wrapping. The
+chat loop hands Claude the exact tool definitions the server surfaced;
+`execute(name, args)` is a straight passthrough to `client.call_tool`.
+
+Phase filtering is heuristic by default (impl gets the full surface;
+validate drops tools whose name/description read as mutations). Users
+can override per phase with:
+
+    [tools]
+    mcp_command = "jcodemunch-mcp serve"
+    impl_tools     = ["order", "menu", "route", "search_symbols"]
+    validate_tools = ["order", "menu"]
+"""
+
+from __future__ import annotations
+
+import shlex
 from typing import Any
 
 from .mcp_client import MCPClient, MCPNotAvailableError
 
 
-ACTION_SCHEMAS = {
-    "search_symbols": {
-        "description": "Search for symbols matching a query across the pre-configured, already-indexed repository. Repo is injected automatically — do not ask for it.",
-        "required": ["query"],
-        "properties": {
-            "query": {"type": "string", "description": "Search query string"},
-            "kind": {"type": "string", "enum": ["function", "class", "method", "variable", "type"], "description": "Symbol kind filter"},
-            "limit": {"type": "integer", "default": 20, "description": "Max results"},
-        }
-    },
-    "get_symbol_source": {
-        "description": "Get full source of one symbol (symbol_id -> flat object). Repo is auto-injected.",
-        "required": ["symbol_id"],
-        "properties": {
-            "symbol_id": {"type": "string", "description": "Symbol ID (e.g., 'src/app.py::MyClass#class' or 'src/app.py::my_func#function')"},
-        }
-    },
-    "get_file_outline": {
-        "description": "Get all symbols (functions, classes, methods) in a file with signatures. Repo is auto-injected.",
-        "required": ["file_path"],
-        "properties": {
-            "file_path": {"type": "string", "description": "Path to file relative to project root"},
-        }
-    },
-    "get_blast_radius": {
-        "description": "Find all files affected by changing a symbol. Repo is auto-injected.",
-        "required": ["symbol"],
-        "properties": {
-            "symbol": {"type": "string", "description": "Symbol name or identifier"},
-            "depth": {"type": "integer", "default": 2, "description": "Call graph depth"},
-        }
-    },
-    "get_ranked_context": {
-        "description": "Assemble best-fit context for a query within a token budget. Repo is auto-injected.",
-        "required": ["query", "token_budget"],
-        "properties": {
-            "query": {"type": "string", "description": "Task or query description"},
-            "token_budget": {"type": "integer", "description": "Max tokens for context bundle"},
-            "compress": {"type": "boolean", "default": False, "description": "Compress results to fit budget"},
-        }
-    },
-    "get_untested_symbols": {
-        "description": "Find functions and methods with no evidence of being exercised by any test file. Repo is auto-injected.",
-        "required": ["file_path"],
-        "properties": {
-            "file_path": {"type": "string", "description": "File path to analyze"},
-            "project_root": {"type": "string", "description": "Project root for test discovery"},
-        }
-    },
-    "index_folder": {
-        "description": "Index a local folder of source code.",
-        "required": ["path"],
-        "properties": {
-            "path": {"type": "string", "description": "Absolute path to project root"},
-        }
-    },
-    "get_call_hierarchy": {
-        "description": "Return incoming callers and outgoing callees for a symbol, N levels deep. Repo is auto-injected.",
-        "required": ["symbol_id"],
-        "properties": {
-            "symbol_id": {"type": "string", "description": "Symbol ID (e.g., 'src/app.py::main#function')"},
-            "depth": {"type": "integer", "default": 2, "description": "Call graph depth"},
-        }
-    },
-}
+_DEFAULT_MCP_COMMAND = "jcodemunch-mcp serve"
+
+_MUTATION_MARKERS = (
+    "write", "create", "delete", "update", "mutate", "remove", "modify",
+    "index_repo", "index_folder", "set_", "reset", "clear", "commit",
+    "push", "publish", "install", "rebuild",
+)
 
 
-PHASE_TOOLS = {
-    "impl": ["search_symbols", "get_symbol_source", "get_file_outline", "get_ranked_context", "get_blast_radius"],
-    "validate": ["search_symbols", "get_symbol_source", "get_untested_symbols"],
-}
+def _is_mutation_tool(tool: dict) -> bool:
+    """Heuristic: does this tool look like it changes state? Conservative."""
+    hay = (tool.get("name", "") + " " + (tool.get("description") or "")).lower()
+    return any(marker in hay for marker in _MUTATION_MARKERS)
 
 
-ACTION_TO_PHASE_TOOL = {
-    "search_symbols": "search_symbols",
-    "get_symbol_source": "get_symbol_source",
-    "get_file_outline": "get_file_outline",
-    "get_ranked_context": "get_ranked_context",
-    "get_blast_radius": "get_blast_radius",
-    "get_untested_symbols": "get_untested_symbols",
-    "index_project": "index_folder",
-    "get_call_hierarchy": "get_call_hierarchy",
-}
-
-
-def get_phase_tools(phase: str) -> list[dict]:
-    """Expose one Anthropic tool per allowed jCodeMunch action.
-
-    Each tool's name equals the action name and its input_schema mirrors the
-    action's own schema (repo omitted — auto-injected in ToolExecutor.execute).
-    This matches the arg shape the working `phasectl query` path passes to
-    execute(), so both paths dispatch through jCodeMunch's `order` front door
-    identically.
-    """
-    tool_names = PHASE_TOOLS.get(phase, [])
-    tools = []
-    for name in tool_names:
-        schema = ACTION_SCHEMAS.get(name)
-        if not schema:
-            continue
-        tools.append({
-            "name": name,
-            "description": schema["description"],
-            "input_schema": {
-                "type": "object",
-                "properties": schema["properties"],
-                "required": schema["required"],
-            },
-        })
-    return tools
+def _mcp_command(config: dict) -> list[str]:
+    raw = ((config.get("tools") or {}).get("mcp_command") or "").strip()
+    if not raw:
+        raw = _DEFAULT_MCP_COMMAND
+    return shlex.split(raw)
 
 
 class ToolExecutor:
-    def __init__(self, project: str = ""):
+    def __init__(self, project: str = "", mcp_command: str = ""):
         self._client: MCPClient | None = None
         self.project = project
-        self._repo_map = {
-            "contextos": "praveenprk/contextos",
-        }
+        self._mcp_command_override = mcp_command
+        self._server_tools: list[dict] | None = None
 
-    def _get_client(self) -> MCPClient | None:
+    def _resolved_command(self, config: dict | None = None) -> list[str]:
+        if self._mcp_command_override:
+            return shlex.split(self._mcp_command_override)
+        return _mcp_command(config or {})
+
+    def _get_client(self, config: dict | None = None) -> MCPClient | None:
         if self._client is None:
             try:
-                self._client = MCPClient(["jcodemunch-mcp", "serve"])
+                self._client = MCPClient(self._resolved_command(config))
                 self._client.__enter__()
+                try:
+                    self._server_tools = self._client.list_tools()
+                except Exception:
+                    self._server_tools = []
             except Exception:
+                self._client = None
                 return None
         return self._client
 
-    def _resolve_repo(self, project: str) -> str:
-        return self._repo_map.get(project, project)
+    def discovered_tools(self, config: dict | None = None) -> list[dict]:
+        """Return the raw tool list from the MCP server (best-effort)."""
+        self._get_client(config)
+        return list(self._server_tools or [])
 
-    def execute(self, name: str, arguments: dict) -> str:
-        action = ACTION_TO_PHASE_TOOL.get(name, name)
-        repo = self._resolve_repo(self.project) if self.project else arguments.get("repo")
-        
-        if action == "index_folder":
-            path = arguments.get("path") or arguments.get("project_path")
-            if not path:
-                return "[jCodeMunch error: index_folder requires path argument]"
-            order_args = {"path": path}
-            allow_state_change = True
+    def get_tools_for_phase(self, phase: str, config: dict | None = None) -> list[dict]:
+        """Return tool definitions (Anthropic/OpenAI-shape) for the given phase."""
+        if phase not in ("impl", "validate"):
+            return []
+
+        client = self._get_client(config)
+        if not client or not self._server_tools:
+            return []
+
+        cfg = (config or {}).get("tools") or {}
+        allowlist_key = f"{phase}_tools"
+        allowlist = cfg.get(allowlist_key)
+
+        if isinstance(allowlist, list) and allowlist:
+            wanted = set(allowlist)
+            selected = [t for t in self._server_tools if t.get("name") in wanted]
         else:
-            if repo:
-                arguments["repo"] = repo
-            order_args = arguments
-            allow_state_change = False
+            selected = list(self._server_tools)
+            if phase == "validate":
+                selected = [t for t in selected if not _is_mutation_tool(t)]
 
-        client = self._get_client()
+        return [
+            {
+                "name": t["name"],
+                "description": t.get("description", ""),
+                "input_schema": t.get("inputSchema") or {"type": "object", "properties": {}},
+            }
+            for t in selected
+            if t.get("name")
+        ]
+
+    def execute(self, name: str, arguments: dict, config: dict | None = None) -> str:
+        """Call a discovered MCP tool by name with the given arguments."""
+        client = self._get_client(config)
         if client is None:
-            return "[jCodeMunch unavailable — answer from context only]"
+            return "[MCP server unavailable — answer from context only]"
         try:
-            return client.call_tool("order", {"action": action, "args": order_args, "allow_state_change": allow_state_change})
+            return client.call_tool(name, arguments or {})
         except MCPNotAvailableError:
-            return "[jCodeMunch unavailable — answer from context only]"
+            return "[MCP server unavailable — answer from context only]"
         except Exception as e:
-            return f"[jCodeMunch error: {e}]"
+            return f"[MCP error: {e}]"
 
     def close(self):
         if self._client:
-            self._client.__exit__(None, None, None)
+            try:
+                self._client.__exit__(None, None, None)
+            except Exception:
+                pass
             self._client = None

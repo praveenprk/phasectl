@@ -1,5 +1,5 @@
 from .provider import DEFAULT_COMPRESS_PROMPT, get_provider
-from .tools import ToolExecutor, get_phase_tools
+from .tools import ToolExecutor
 from .graph import GraphStore
 from .config import get_graph_path
 
@@ -12,7 +12,7 @@ def chat(
 ) -> str:
     provider = get_provider(app_config)
     tool_executor = ToolExecutor(project=project)
-    tools = get_phase_tools(phase_config.name)
+    tools = tool_executor.get_tools_for_phase(phase_config.name, app_config)
 
     try:
         while True:
@@ -31,7 +31,9 @@ def chat(
                     "tool_calls": tool_calls,
                 })
                 for tc in tool_calls:
-                    result = tool_executor.execute(tc["name"], tc["arguments"])
+                    result = tool_executor.execute(
+                        tc["name"], tc["arguments"], config=app_config
+                    )
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc["id"],
