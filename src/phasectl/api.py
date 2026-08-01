@@ -9,13 +9,25 @@ def chat(
     phase_config,
     app_config: dict,
     project: str = "",
-) -> str:
+    on_tool_call=None,
+    on_round=None,
+) -> tuple[str, int]:
+    """Run the chat loop; returns (final_text, num_tools_available).
+
+    `on_tool_call(name, arguments)` fires immediately before each MCP
+    tool invocation. `on_round(index)` fires before each provider call
+    (index starts at 0 for the first request).
+    """
     provider = get_provider(app_config)
     tool_executor = ToolExecutor(project=project)
     tools = tool_executor.get_tools_for_phase(phase_config.name, app_config)
+    tools_available = len(tools)
 
     try:
+        round_ix = 0
         while True:
+            if on_round is not None:
+                on_round(round_ix, tools_available)
             text, tool_calls = provider.chat(
                 system=phase_config.system_prompt,
                 messages=messages,
@@ -23,6 +35,7 @@ def chat(
                 temperature=phase_config.temperature,
                 max_tokens=4096,
             )
+            round_ix += 1
 
             if tool_calls:
                 messages.append({
@@ -31,6 +44,11 @@ def chat(
                     "tool_calls": tool_calls,
                 })
                 for tc in tool_calls:
+                    if on_tool_call is not None:
+                        try:
+                            on_tool_call(tc.get("name", ""), tc.get("arguments") or {})
+                        except Exception:
+                            pass
                     result = tool_executor.execute(
                         tc["name"], tc["arguments"], config=app_config
                     )
@@ -41,7 +59,7 @@ def chat(
                     })
                 continue
 
-            return text
+            return text, tools_available
     finally:
         tool_executor.close()
 

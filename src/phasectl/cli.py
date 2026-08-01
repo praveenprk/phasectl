@@ -39,6 +39,39 @@ from .loose import (
 )
 from .seed import build_seed_block
 from .auth import AuthError, key_source, save_api_key, remove_api_key
+from .progress import Progress
+
+
+def _provider_label(config: dict) -> str:
+    p = config.get("provider") or {}
+    backend = (p.get("backend") or "anthropic").strip()
+    model = (p.get("model") or "").strip() or "(default)"
+    return f"{backend}/{model}"
+
+
+def _compression_label(config: dict) -> str:
+    p = config.get("provider") or {}
+    backend = (p.get("backend") or "anthropic").strip()
+    model = (p.get("compression_model") or p.get("model") or "").strip() or "(default)"
+    return f"{backend}/{model}"
+
+
+def _fmt_tool_call(name: str, arguments: dict) -> str:
+    """Compact repr of a tool call for a progress line.
+
+    Picks the first str-valued arg as a single positional-ish label so
+    the line stays short: `search_symbols("AgentNode")`.
+    """
+    label = ""
+    for v in (arguments or {}).values():
+        if isinstance(v, str):
+            label = v
+            break
+    if label:
+        if len(label) > 40:
+            label = label[:37] + "..."
+        return f"{name}({label!r})"
+    return f"{name}()"
 
 
 _CLI_OVERRIDES: dict = {}
@@ -226,11 +259,14 @@ def start(
     one is found). Any --seed files are compressed and added as extra
     system context.
     """
+    progress = Progress(quiet=quiet)
+    progress.step("loading config...")
     config = _load_config()
     store = _get_store(config)
 
     active = store.get_active_session(project)
     if active:
+        progress.done()
         print(
             f"Session already active for project '{project}'. Close it first.",
             file=sys.stderr,
@@ -240,6 +276,7 @@ def start(
     try:
         load_phase(phase)
     except FileNotFoundError:
+        progress.done()
         available = list_phases()
         print(
             f"Phase '{phase}' not found. "
@@ -249,6 +286,11 @@ def start(
         raise typer.Exit(1)
 
     prior = load_prior_session(store, project)
+    if prior:
+        progress.step(f"loading prior session ({prior[0]['id'][:8]})...")
+    else:
+        progress.step(f"no prior session for '{project}' — starting fresh...")
+
     resume_block = ""
     if phase == "orient" and not no_fuse:
         session_summary = ""
@@ -262,12 +304,16 @@ def start(
         if repo_path:
             try:
                 git_state = get_git_state(repo_path)
+                branch = git_state.get("branch") or "detached"
+                dirty = git_state.get("dirty_count", 0)
+                progress.step(f"reading git state ({branch}, {dirty} dirty)...")
             except Exception as e:
                 _diag(f"[orient] git introspection skipped: {e}", quiet=quiet)
             try:
                 cc_dir = get_claude_code_projects_dir(config)
                 cc_path = find_claude_code_session(repo_path, cc_dir)
                 if cc_path:
+                    progress.step("reading coding-agent transcript...")
                     cc_context = extract_last_context(cc_path)
             except Exception as e:
                 _diag(f"[orient] coding-agent transcript lookup skipped: {e}", quiet=quiet)
@@ -278,11 +324,15 @@ def start(
             )
 
         try:
+            progress.step(
+                f"synthesizing resume block via {_compression_label(config)}..."
+            )
             resume_block = build_resume_block(git_state, session_summary, cc_context, config)
         except Exception as e:
             _diag(f"[orient] synthesis failed: {e}", quiet=quiet)
             resume_block = ""
 
+    progress.step("opening session...")
     if prior:
         session_data, turns = prior
         summary = session_data.get("final_summary", "") or ""
@@ -290,17 +340,6 @@ def start(
         close_date = session_data.get("closed_at", "unknown")
         if close_date != "unknown":
             close_date = close_date[:16]
-        if not resume_block:
-            _diag(
-                f"Prior session: {close_date}. Phase at close: {close_phase}.\n"
-                f"Summary: {summary}",
-                quiet=quiet,
-            )
-        else:
-            _diag(
-                f"Prior session: {close_date}. Phase at close: {close_phase}.",
-                quiet=quiet,
-            )
 
         injection = build_injection_block(session_data, turns)
         session = open_session(store, project, phase)
@@ -312,10 +351,6 @@ def start(
             token_estimate=estimate_tokens(injection),
         )
     else:
-        _diag(
-            f"No prior session found for project '{project}'. Starting fresh.",
-            quiet=quiet,
-        )
         session = open_session(store, project, phase)
 
     if resume_block:
@@ -329,6 +364,7 @@ def start(
 
     seed_paths = seed or []
     if seed_paths:
+        progress.step(f"compressing {len(seed_paths)} seed file(s)...")
         seed_block = build_seed_block(
             seed_paths,
             config,
@@ -343,6 +379,7 @@ def start(
                 token_estimate=estimate_tokens(seed_block),
             )
 
+    progress.done()
     if resume_block:
         print(resume_block)
     print(f"session opened: {session.id[:8]} {phase}")
@@ -371,12 +408,15 @@ def chat(
     """
     if model is not None:
         _CLI_OVERRIDES["model"] = model
+    progress = Progress(quiet=quiet)
+    progress.step("loading config...")
     config = _load_config()
     store = _get_store(config)
     project = config["defaults"]["project"]
 
     session_data = store.get_active_session(project)
     if not session_data:
+        progress.done()
         print("No active session. Run 'phasectl start' first.", file=sys.stderr)
         raise typer.Exit(3)
 
@@ -386,12 +426,16 @@ def chat(
     turns = store.get_turns(session_data["id"])
 
     if should_compress(turns, phase_config.token_budget):
-        _diag("Compressing tail turns...", quiet=quiet)
+        progress.step(
+            f"compressing tail turns via {_compression_label(config)}..."
+        )
         try:
             compress_tail(session_data["id"], store, config)
         except AuthError as e:
+            progress.done()
             _die_on_auth_error(e)
         except Exception as e:
+            progress.done()
             print(f"Compression failed: {e}", file=sys.stderr)
             raise typer.Exit(2)
         turns = store.get_turns(session_data["id"])
@@ -413,19 +457,38 @@ def chat(
         token_estimate=estimate_tokens(message),
     )
 
-    system_prompt = phase_config.system_prompt
+    provider_label = _provider_label(config)
+
+    def _on_round(ix: int, tools_n: int) -> None:
+        if ix == 0:
+            tool_hint = f", {tools_n} tools available" if tools_n else ""
+            progress.step(
+                f"sending to {provider_label} ({current_phase} phase{tool_hint})..."
+            )
+        else:
+            progress.step(f"sending follow-up to {provider_label}...")
+
+    def _on_tool_call(name: str, args: dict) -> None:
+        progress.event(f"[tool call] {_fmt_tool_call(name, args)}")
+
     try:
-        response = api_chat(
+        response, _tools_available = api_chat(
             messages=messages,
             phase_config=phase_config,
             app_config=config,
             project=project,
+            on_tool_call=_on_tool_call,
+            on_round=_on_round,
         )
     except AuthError as e:
+        progress.done()
         _die_on_auth_error(e)
     except Exception as e:
+        progress.done()
         print(f"API error: {e}", file=sys.stderr)
         raise typer.Exit(2)
+
+    progress.step("receiving response...")
 
     store.add_turn(
         session_id=session_data["id"],
@@ -439,6 +502,7 @@ def chat(
     total = sum(t["token_estimate"] for t in all_turns)
     store.update_session(session_data["id"], total_tokens=total)
 
+    progress.done()
     print(response)
 
 
@@ -497,12 +561,15 @@ def close(
     Prints '<session-id> <turns>→1 <tokens>t' on stdout.
     Exit 3 if no session is active, 2 if compression fails.
     """
+    progress = Progress(quiet=quiet)
+    progress.step("loading config...")
     config = _load_config()
     store = _get_store(config)
     project = config["defaults"]["project"]
 
     session_data = store.get_active_session(project)
     if not session_data:
+        progress.done()
         print("No active session to close.", file=sys.stderr)
         raise typer.Exit(3)
 
@@ -517,23 +584,34 @@ def close(
         "\n\n".join(turn_texts) if turn_texts else "No turns in this session."
     )
 
+    progress.step(
+        f"compressing {len(turns)} turns via {_compression_label(config)}..."
+    )
     try:
         summary = api_compress(
             turns_text, config, system_prompt=snapshot_phase.system_prompt
         )
     except AuthError as e:
+        progress.done()
         _die_on_auth_error(e)
     except Exception as e:
+        progress.done()
         print(f"Compression failed: {e}", file=sys.stderr)
         raise typer.Exit(2)
 
     all_turns = store.get_turns(session_data["id"])
     total_tokens = sum(t["token_estimate"] for t in all_turns)
 
+    progress.step("storing session snapshot...")
     close_session(store, session_data["id"], current_phase, summary, total_tokens)
 
+    rfcs, decisions = extract_rfcs_and_decisions(summary)
+    progress.step(
+        f"updating graph ({len(rfcs)} RFCs, {len(decisions)} DECISIONs linked)..."
+    )
     persist_session_graph(session_data["id"], project, summary, session_data["created_at"], config)
 
+    progress.done()
     print(f"{session_data['id'][:8]} {len(turns)}→1 {total_tokens}t")
 
 
@@ -710,11 +788,13 @@ def index(
         )
         raise typer.Exit(1)
 
-    _diag(f"Indexing {abs_path} as {project} via {binary}...", quiet=quiet)
+    progress = Progress(quiet=quiet)
+    progress.step(f"indexing {abs_path} via {binary}...")
 
     try:
         proc = _run_index(binary, abs_path)
     except FileNotFoundError:
+        progress.done()
         print(
             f"indexer binary not found on PATH: {binary}. Install it, or pass "
             "--register-only to store the path without indexing.",
@@ -722,10 +802,12 @@ def index(
         )
         raise typer.Exit(1)
     except subprocess.TimeoutExpired:
+        progress.done()
         print(f"{binary} index timed out after 120s", file=sys.stderr)
         raise typer.Exit(1)
 
     if proc.returncode != 0:
+        progress.done()
         stderr_tail = (proc.stderr or "").strip().splitlines()
         hint = stderr_tail[-1] if stderr_tail else ""
         looks_unknown = (
@@ -744,7 +826,9 @@ def index(
         raise typer.Exit(1)
 
     summary = _parse_symbol_count(proc.stdout)
+    progress.step("storing index path in config...")
     set_index_path(project, abs_path)
+    progress.done()
     print(summary)
 
 
@@ -924,11 +1008,14 @@ def loose(
     can be resolved or the path is not a git repo. --synthesize is the
     only sub-feature that touches the API.
     """
+    progress = Progress(quiet=quiet)
+    progress.step("loading config...")
     config = _load_config()
     active_project = config.get("defaults", {}).get("project", "")
 
     repo = loose_resolve_repo(path, project, active_project, config)
     if not repo:
+        progress.done()
         print(
             "no repo: pass --path <dir> or index a project first (phasectl index --project <name> --path <dir>)",
             file=sys.stderr,
@@ -936,12 +1023,14 @@ def loose(
         raise typer.Exit(1)
 
     if not is_git_repo(repo):
+        progress.done()
         print(f"not a git repository: {repo}", file=sys.stderr)
         raise typer.Exit(1)
 
-    data = loose_collect(repo, base=base)
+    data = loose_collect(repo, base=base, progress=progress)
 
     if json_flag:
+        progress.done()
         print(json.dumps(data))
         return
 
@@ -954,10 +1043,14 @@ def loose(
 
     top_line = ""
     if synthesize:
+        progress.step(
+            f"synthesizing 'Most stale' line via {_compression_label(config)}..."
+        )
         top_line = loose_synthesize_top_line(data, config)
 
     rendered = loose_render_human(data, label)
 
+    progress.done()
     if quiet:
         for line in rendered.splitlines()[1:]:
             print(line)
