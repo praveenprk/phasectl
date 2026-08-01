@@ -1,0 +1,362 @@
+.TH PHASECTL 1 "August 2026" "phasectl 0.1.0" "User Commands"
+.SH NAME
+phasectl \- cognitive-mode manager for engineering sessions
+.SH SYNOPSIS
+.B phasectl
+.I COMMAND
+[\fIOPTIONS\fR] [\fIARGS\fR]
+.SH DESCRIPTION
+.B phasectl
+runs a sequence of Anthropic API calls under a named
+.I phase
+\(em orient, ideate, design, impl, validate, snapshot \(em each with its own
+system prompt, temperature, and token budget. Turns are persisted to a local
+SQLite database; when a session is closed, it is compressed into a
+summary and linked in a JSON-backed graph. Symbol lookup for the impl and
+validate phases is delegated to an external MCP-speaking indexer over stdio.
+.PP
+The bundled phase prompts describe
+.I posture,
+not domain knowledge. Any project-specific content belongs in a per-user
+override at
+.IR ~/.config/phasectl/phases/<name>.toml .
+.SH COMMANDS
+.SS start
+.B phasectl start
+[\fB--project\fR \fINAME\fR]
+[\fB--phase\fR \fINAME\fR]
+[\fB--seed\fR \fIPATH\fR]...
+[\fB--no-fuse\fR]
+[\fB--quiet\fR]
+.PP
+Open a new session for a project.
+Exits 1 if a session is already active or if the phase name is unknown.
+In the default
+.B orient
+phase (unless
+.BR --no-fuse ),
+phasectl fuses git state of the indexed repo, the closed summary of the last
+session, and the tail of the most recent Claude Code transcript for that repo
+(under
+.IR ~/.claude/projects/ )
+into a
+.B "Resume here:"
+block on stdout. Each
+.B --seed
+file (\fB.md\fR, \fB.txt\fR, or \fB.json\fR, max 200 KB) is compressed by the
+LLM and injected as system context; the flag repeats.
+.SS chat
+.B phasectl chat
+\fIMESSAGE\fR
+[\fB--quiet\fR]
+.PP
+Send a message under the current phase's system prompt.
+When the running token estimate exceeds the phase budget, older turns are
+compressed into a summary before the request. In the
+.B impl
+and
+.B validate
+phases the model may call code-lookup tools
+.RB ( search_symbols ,
+.BR get_symbol_source ,
+.BR get_file_outline ,
+.BR get_ranked_context ,
+.BR get_blast_radius ,
+.BR get_untested_symbols )
+served by
+.BR jcodemunch-mcp ;
+the tool loop runs until the model produces a plain-text reply.
+.SS switch
+.B phasectl switch --phase
+\fINAME\fR
+[\fB--quiet\fR]
+.PP
+Change the active session's phase. Subsequent
+.B chat
+calls use the new phase's prompt, temperature, budget, and tool set. Prior
+turns remain visible.
+.SS close
+.B phasectl close
+[\fB--quiet\fR]
+.PP
+Close the active session and produce a snapshot summary.
+Uncompressed turns are handed to the
+.B snapshot
+phase prompt via the compression model. The result is stored on the session
+row, and any
+.B RFC-<n>
+or
+.B DECISION-<n>
+tokens found in it are linked into
+.IR ~/.config/phasectl/graph.json .
+Prints
+.RI < session-id >
+.RI < turns >\(->1
+.RI < tokens >t
+on stdout.
+.SS status
+.B phasectl status
+[\fB--json\fR]
+[\fB--quiet\fR]
+.PP
+Show whether a session is active for the default project. With an active
+session, prints its short id, phase, token estimate, and turn count. With
+none, prints the date and short id of the most recent closed session. With
+.B --json
+emits an object with
+.BR session_id ,
+.BR project ,
+.BR phase ,
+.BR tokens ,
+.BR turns ,
+and (when no session is active)
+.BR last_session .
+.SS index
+.B phasectl index
+[\fB--project\fR \fINAME\fR]
+[\fB--path\fR \fIDIR\fR]
+[\fB--quiet\fR]
+.PP
+Register a project root and hand it to
+.B jcodemunch-mcp
+for indexing. The resolved absolute path is stored at
+.RI [projects. <name> ].index_path
+in
+.IR config.toml ,
+so later runs can be spelled just
+.B phasectl index --project
+.IR NAME .
+First-time indexing requires
+.BR --path .
+Exit 1 on missing path, unknown project, or indexer error.
+.SS query
+.B phasectl query
+\fISYMBOL\fR
+[\fB--project\fR \fINAME\fR]
+[\fB--json\fR]
+[\fB--quiet\fR]
+.PP
+Search the indexed symbols of a project. Standalone \(em no session needed.
+Requires a prior
+.BR "phasectl index" .
+Exit 4 if the project has no stored index or the indexer reports an error.
+.SS graph
+.B phasectl graph
+[\fB--project\fR \fINAME\fR]
+[\fB--json\fR]
+[\fB--quiet\fR]
+.PP
+Show closed sessions with their linked RFCs and DECISIONs from
+.IR ~/.config/phasectl/graph.json .
+Standalone. Emits an empty result when nothing has been closed yet.
+.SS loose
+.B phasectl loose
+[\fB--project\fR \fINAME\fR]
+[\fB--path\fR \fIDIR\fR]
+[\fB--base\fR \fIBRANCH\fR]
+[\fB--json\fR]
+[\fB--synthesize\fR]
+[\fB--quiet\fR]
+.PP
+List every loose thread in a git repo: uncommitted files, unmerged branches,
+stashes, unpushed commits, and extra worktrees. Standalone. Works on any git
+repo via
+.BR --path ;
+otherwise reads the project's stored
+.BR index_path .
+.B --base
+defaults to
+.BR main ,
+falling back to
+.B master
+or
+.B origin/HEAD .
+.B --synthesize
+adds one LLM-produced
+.B "Most stale:"
+top line (requires the API key); all other output is offline.
+.SS check
+.B phasectl check
+[\fB--project\fR \fINAME\fR]
+[\fB--json\fR]
+.PP
+Smoke-test every subsystem: config, auth, db, phases, index, mcp, git.
+No LLM calls; no API key required. Each check catches its own errors and
+prints
+.B \(dg
+with a reason on failure. Exit 0 if all pass, 1 if any fail.
+.SS auth set
+.B phasectl auth set
+.PP
+Read an Anthropic API key from a hidden prompt and store it at
+.I ~/.config/phasectl/credentials
+(chmod 600). Consulted only when
+.B $ANTHROPIC_API_KEY
+is unset.
+.SS auth status
+.B phasectl auth status
+.PP
+Report which source phasectl would load the key from. Prints one of
+.RB \(oq "key: from environment" \(cq,
+.RB \(oq "key: configured (credentials file)" \(cq,
+or
+.RB \(oq "key: not set" \(cq.
+Does not validate the key against the API.
+.SH CONFIGURATION
+Configuration lives under
+.BR $XDG_CONFIG_HOME/phasectl ,
+defaulting to
+.BR ~/.config/phasectl .
+The file
+.B config.toml
+is created on first run and read by every command.
+.PP
+.RS 4
+.nf
+[api]
+model              = "claude-sonnet-4-6"          # chat model
+compression_model  = "claude-haiku-4-5-20251001"  # close / seed / loose --synthesize
+
+[storage]
+db_path = ""            # empty = ~/.config/phasectl/sessions.db
+
+[graph]
+path = ""               # empty = ~/.config/phasectl/graph.json
+
+[defaults]
+project = "myproject"   # used when a command omits --project
+
+[claude_code]
+projects_dir = ""       # override auto-detected ~/.claude/projects lookup
+
+[projects.myproject]
+index_path = "/abs/path/to/myproject"   # written by 'phasectl index'
+.fi
+.RE
+.SH PHASES
+The bundled phases live in the package and can be inspected via
+.BR "phasectl check" .
+A file placed at
+.BI ~/.config/phasectl/phases/ NAME .toml
+takes precedence over the bundled prompt of the same name; user names not in
+the bundled set are available as new phases.
+.PP
+.RS 4
+.nf
+[phase]
+name         = "impl"
+temperature  = 0.1
+token_budget = 10000
+tools_allowed = []
+
+system_prompt = """
+You are in impl mode: ...
+"""
+.fi
+.RE
+.SH FILES
+.TP
+.B ~/.config/phasectl/config.toml
+Global settings.
+.TP
+.B ~/.config/phasectl/credentials
+Anthropic API key, plain text, chmod 600. Read only when
+.B $ANTHROPIC_API_KEY
+is unset.
+.TP
+.B ~/.config/phasectl/sessions.db
+SQLite database with
+.B sessions
+and
+.B turns
+tables.
+.TP
+.B ~/.config/phasectl/graph.json
+NetworkX MultiDiGraph on disk (node_link_data format). Contains nodes for
+sessions, RFCs, decisions, and (in future) symbols.
+.TP
+.B ~/.config/phasectl/phases/
+Optional per-user phase overrides. Each file replaces the bundled phase of
+the same name.
+.SH ENVIRONMENT
+.TP
+.B ANTHROPIC_API_KEY
+API key. When set, wins over
+.BR ~/.config/phasectl/credentials .
+.TP
+.B XDG_CONFIG_HOME
+Base directory for the phasectl config tree. Defaults to
+.BR ~/.config .
+.TP
+.B CLAUDE_CONFIG_DIR
+Consulted when
+.B start
+looks for Claude Code transcripts to fuse. Defaults to
+.BR ~/.claude .
+.SH EXIT CODES
+.TP
+.B 0
+Success.
+.TP
+.B 1
+User error: bad flag, missing path, session-already-active on
+.BR start ,
+missing API key, phase not found, failed
+.BR check ,
+graph query failed, loose repo missing.
+.TP
+.B 2
+API failure: compression or chat error, invalid API key.
+.TP
+.B 3
+No active session for
+.BR chat ,
+.BR switch ,
+or
+.BR close .
+.TP
+.B 4
+Query index unavailable or indexer error in
+.BR query .
+.SH EXAMPLES
+.PP
+First-time setup for a new project:
+.PP
+.RS 4
+.nf
+phasectl auth set
+phasectl index --project my-api --path .
+phasectl check --project my-api
+.fi
+.RE
+.PP
+A typical work session:
+.PP
+.RS 4
+.nf
+phasectl start  --project my-api --phase orient
+phasectl chat   "where are we?"
+phasectl switch --phase design
+phasectl chat   "we need a retry policy for the outbound webhook"
+phasectl switch --phase impl
+phasectl chat   "implement the design"
+phasectl close
+.fi
+.RE
+.PP
+Inspecting the repo without spending a turn:
+.PP
+.RS 4
+.nf
+phasectl loose  --project my-api
+phasectl query  RetryPolicy --project my-api --json
+phasectl graph  --project my-api --json | jq .
+.fi
+.RE
+.SH SEE ALSO
+.BR git (1),
+.BR sqlite3 (1),
+.BR jq (1)
+.PP
+Project sources and additional design notes:
+.BR https://github.com/praveenprk/phasectl .
