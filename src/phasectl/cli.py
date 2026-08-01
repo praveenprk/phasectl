@@ -82,8 +82,6 @@ def _load_config() -> dict:
             'path = ""\n\n'
             '[defaults]\n'
             'project = "contextos"\n'
-            'window_tokens = 15000\n'
-            'keep_last_turns = 3\n'
         )
     with open(config_file, "rb") as f:
         return tomllib.load(f)
