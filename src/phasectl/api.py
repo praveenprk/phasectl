@@ -1,9 +1,9 @@
-import os
 from typing import NotRequired, TypedDict
 
-from anthropic import Anthropic
+from anthropic import Anthropic, AuthenticationError
 from anthropic import NOT_GIVEN
 
+from .auth import InvalidAPIKey, NoAPIKey, get_api_key
 from .tools import ToolExecutor, get_phase_tools
 from .graph import GraphStore
 from .config import get_graph_path
@@ -15,9 +15,9 @@ _client: Anthropic | None = None
 def _get_client() -> Anthropic:
     global _client
     if _client is None:
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        api_key = get_api_key()
         if not api_key:
-            raise RuntimeError("ANTHROPIC_API_KEY environment variable is not set")
+            raise NoAPIKey()
         _client = Anthropic(api_key=api_key)
     return _client
 
@@ -41,14 +41,17 @@ def chat(
     tool_executor = ToolExecutor(project=project)
 
     while True:
-        response = client.messages.create(
-            model=model,
-            system=phase_config.system_prompt,
-            messages=messages,
-            tools=tools if tools else NOT_GIVEN,
-            temperature=phase_config.temperature,
-            max_tokens=4096,
-        )
+        try:
+            response = client.messages.create(
+                model=model,
+                system=phase_config.system_prompt,
+                messages=messages,
+                tools=tools if tools else NOT_GIVEN,
+                temperature=phase_config.temperature,
+                max_tokens=4096,
+            )
+        except AuthenticationError:
+            raise InvalidAPIKey()
 
         if response.stop_reason == "tool_use":
             tool_results: list[ToolResult] = []
@@ -86,13 +89,16 @@ def compress(turns_text: str, app_config: dict, system_prompt: str | None = None
             "preserving key decisions, open questions, and context."
         )
 
-    response = client.messages.create(
-        model=model,
-        system=system_prompt,
-        messages=[{"role": "user", "content": turns_text}],
-        temperature=0.3,
-        max_tokens=1024,
-    )
+    try:
+        response = client.messages.create(
+            model=model,
+            system=system_prompt,
+            messages=[{"role": "user", "content": turns_text}],
+            temperature=0.3,
+            max_tokens=1024,
+        )
+    except AuthenticationError:
+        raise InvalidAPIKey()
     return response.content[0].text
 
 

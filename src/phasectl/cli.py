@@ -36,14 +36,22 @@ from .loose import (
     synthesize_top_line as loose_synthesize_top_line,
 )
 from .seed import build_seed_block
+from .auth import AuthError, key_source, save_api_key
 
 
 app = typer.Typer()
+auth_app = typer.Typer(help="Manage the Anthropic API key.")
+app.add_typer(auth_app, name="auth")
 
 
 def _diag(msg: str, quiet: bool = False) -> None:
     if not quiet:
         print(msg, file=sys.stderr)
+
+
+def _die_on_auth_error(exc: AuthError) -> None:
+    print(str(exc), file=sys.stderr)
+    raise typer.Exit(exc.exit_code)
 
 
 def _load_config() -> dict:
@@ -232,6 +240,8 @@ def chat(
         _diag("Compressing tail turns...", quiet=quiet)
         try:
             compress_tail(session_data["id"], store, config)
+        except AuthError as e:
+            _die_on_auth_error(e)
         except Exception as e:
             print(f"Compression failed: {e}", file=sys.stderr)
             raise typer.Exit(2)
@@ -262,6 +272,8 @@ def chat(
             app_config=config,
             project=project,
         )
+    except AuthError as e:
+        _die_on_auth_error(e)
     except Exception as e:
         print(f"API error: {e}", file=sys.stderr)
         raise typer.Exit(2)
@@ -345,6 +357,8 @@ def close(
         summary = api_compress(
             turns_text, config, system_prompt=snapshot_phase.system_prompt
         )
+    except AuthError as e:
+        _die_on_auth_error(e)
     except Exception as e:
         print(f"Compression failed: {e}", file=sys.stderr)
         raise typer.Exit(2)
@@ -575,6 +589,37 @@ def loose(
         if top_line:
             print(top_line)
         print(rendered)
+
+
+@auth_app.command("set")
+def auth_set():
+    """Store your Anthropic API key at ~/.config/phasectl/credentials (chmod 600)."""
+    import getpass
+
+    try:
+        key = getpass.getpass("Anthropic API key: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print("", file=sys.stderr)
+        raise typer.Exit(1)
+
+    if not key:
+        print("phasectl: no key entered.", file=sys.stderr)
+        raise typer.Exit(1)
+
+    path = save_api_key(key)
+    print(f"key stored at {path}")
+
+
+@auth_app.command("status")
+def auth_status():
+    """Show where the current API key is loaded from."""
+    src = key_source()
+    if src == "environment":
+        print("key: from environment")
+    elif src == "credentials file":
+        print("key: configured (credentials file)")
+    else:
+        print("key: not set")
 
 
 if __name__ == "__main__":
