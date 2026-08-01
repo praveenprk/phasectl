@@ -218,6 +218,15 @@ def start(
         )
         session = open_session(store, project, phase)
 
+    if resume_block:
+        store.add_turn(
+            session_id=session.id,
+            phase=phase,
+            role="system",
+            content=resume_block,
+            token_estimate=estimate_tokens(resume_block),
+        )
+
     seed_paths = seed or []
     if seed_paths:
         seed_block = build_seed_block(
