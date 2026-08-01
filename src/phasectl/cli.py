@@ -439,10 +439,20 @@ def status(
 @app.command()
 def index(
     project: str = typer.Option("contextos", "--project", "-p", help="Project name"),
-    path: str = typer.Option(..., "--path", help="Path to project root"),
+    path: str = typer.Option(None, "--path", help="Path to project root (defaults to stored index_path)"),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress diagnostic output"),
 ):
     """Index a project for symbol search via jCodeMunch."""
+    if path is None:
+        stored = get_index_path(project)
+        if stored is None:
+            print(
+                f"no stored path for project '{project}'. Pass --path <path> for the first index.",
+                file=sys.stderr,
+            )
+            raise typer.Exit(1)
+        path = str(stored)
+
     if not os.path.exists(path):
         print(f"Path does not exist: {path}", file=sys.stderr)
         raise typer.Exit(1)
@@ -589,6 +599,123 @@ def loose(
         if top_line:
             print(top_line)
         print(rendered)
+
+
+@app.command()
+def check(
+    project: str = typer.Option(None, "--project", "-p", help="Project name (defaults to config)"),
+    json_flag: bool = typer.Option(False, "--json", help="Output JSON"),
+):
+    """Smoke-test the pipeline: config, auth, db, phases, index, mcp, git. No LLM calls."""
+    config = _load_config()
+    project = project or config.get("defaults", {}).get("project", "") or ""
+
+    results: list[tuple[str, bool, str]] = []
+
+    def _add(name: str, ok: bool, msg: str) -> None:
+        results.append((name, ok, msg))
+
+    # config
+    try:
+        cf = get_config_file()
+        if cf.exists():
+            _add("config", True, str(cf).replace(str(os.path.expanduser("~")), "~"))
+        else:
+            _add("config", False, f"missing: {cf}")
+    except Exception as e:
+        _add("config", False, f"error: {e}")
+
+    # auth — presence only, no live API call
+    try:
+        src = key_source()
+        if src == "not set":
+            _add("auth", False, "no key configured (run: phasectl auth set)")
+        else:
+            _add("auth", True, f"{src} (set)")
+    except Exception as e:
+        _add("auth", False, f"error: {e}")
+
+    # db
+    try:
+        db_path = str(get_db_path())
+        store = SQLiteStore(db_path)
+        n = store.conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+        _add("db", True, f"{os.path.basename(db_path)} ({n} sessions)")
+    except Exception as e:
+        _add("db", False, f"error: {e}")
+
+    # phases
+    try:
+        names = list_phases()
+        loaded: list[str] = []
+        for pn in names:
+            try:
+                load_phase(pn)
+                loaded.append(pn)
+            except Exception:
+                pass
+        if loaded:
+            _add("phases", True, f"{len(loaded)} phases loaded ({','.join(loaded)})")
+        else:
+            _add("phases", False, "no phases loadable")
+    except Exception as e:
+        _add("phases", False, f"error: {e}")
+
+    # index
+    idx_path = None
+    try:
+        if not project:
+            _add("index", False, "no project (set defaults.project or pass --project)")
+        else:
+            idx = get_index_path(project, config)
+            if idx is None:
+                _add("index", False, f"'{project}' has no stored path (run: phasectl index --project {project} --path <dir>)")
+            elif not idx.exists():
+                _add("index", False, f"'{project}' path missing: {idx}")
+            else:
+                idx_path = str(idx)
+                display = str(idx).replace(str(os.path.expanduser("~")), "~")
+                _add("index", True, f"{project} → {display}")
+    except Exception as e:
+        _add("index", False, f"error: {e}")
+
+    # mcp — spawn jcodemunch-mcp and complete the handshake
+    try:
+        from .mcp_client import MCPClient
+        with MCPClient(["jcodemunch-mcp", "serve"]):
+            pass
+        _add("mcp", True, "jcodemunch-mcp reachable (serve handshake ok)")
+    except Exception as e:
+        _add("mcp", False, f"jcodemunch-mcp unreachable: {e}")
+
+    # git — prefer the indexed repo, fall back to cwd
+    try:
+        from .loose import is_git_repo, get_current_branch, get_uncommitted
+        repo = idx_path or os.getcwd()
+        if is_git_repo(repo):
+            branch = get_current_branch(repo) or "detached"
+            dirty = get_uncommitted(repo).get("count", 0)
+            _add("git", True, f"repo is git ({branch}, {dirty} dirty)")
+        else:
+            _add("git", False, f"not a git repo: {repo}")
+    except Exception as e:
+        _add("git", False, f"error: {e}")
+
+    all_ok = all(ok for _, ok, _ in results)
+
+    if json_flag:
+        print(json.dumps({
+            "ok": all_ok,
+            "project": project or None,
+            "checks": [{"name": n, "ok": ok, "message": m} for n, ok, m in results],
+        }))
+    else:
+        for name, ok, msg in results:
+            mark = "✓" if ok else "✗"
+            print(f"{(name + ':'):<10}  {mark} {msg}")
+
+    if not all_ok:
+        raise typer.Exit(1)
 
 
 @auth_app.command("set")
