@@ -409,6 +409,28 @@ def chat(
     if model is not None:
         _CLI_OVERRIDES["model"] = model
     progress = Progress(quiet=quiet)
+
+    stdin_content = ""
+    if not sys.stdin.isatty():
+        stdin_raw = sys.stdin.read()
+        original_len = len(stdin_raw)
+        max_chars = 12000
+        if original_len > max_chars:
+            stdin_content = stdin_raw[:max_chars]
+            print(
+                f"stdin: {original_len} chars truncated to {max_chars}",
+                file=sys.stderr,
+            )
+        else:
+            stdin_content = stdin_raw
+        if stdin_content:
+            progress.step(f"reading stdin ({len(stdin_content)} chars)...")
+
+    if stdin_content:
+        full_message = f"<context>\n{stdin_content}\n</context>\n\n{message}"
+    else:
+        full_message = message
+
     progress.step("loading config...")
     config = _load_config()
     store = _get_store(config)
@@ -447,14 +469,14 @@ def chat(
         role = "user" if turn["role"] == "system" else turn["role"]
         messages.append({"role": role, "content": turn["content"]})
 
-    messages.append({"role": "user", "content": message})
+    messages.append({"role": "user", "content": full_message})
 
     store.add_turn(
         session_id=session_data["id"],
         phase=current_phase,
         role="user",
-        content=message,
-        token_estimate=estimate_tokens(message),
+        content=full_message,
+        token_estimate=estimate_tokens(full_message),
     )
 
     provider_label = _provider_label(config)
