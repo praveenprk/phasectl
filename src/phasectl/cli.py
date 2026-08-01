@@ -155,9 +155,34 @@ def _load_config() -> dict:
     # passed to the outer `phasectl --backend X --model Y ...` callback.
     if _CLI_OVERRIDES:
         provider = config.setdefault("provider", {})
+
+        # If --backend flips the backend, the model IDs and api_base baked
+        # into the file target the OLD backend and would 404 against the
+        # new one (e.g. compression_model="claude-haiku-…" on ollama).
+        # Wipe them so provider defaults, or the CLI --model, kick in.
+        stored_backend = (provider.get("backend") or "").strip()
+        new_backend = str(_CLI_OVERRIDES.get("backend", stored_backend)).strip()
+        backend_changed = (
+            "backend" in _CLI_OVERRIDES and new_backend != stored_backend
+        )
+        if backend_changed:
+            provider["model"] = ""
+            provider["compression_model"] = ""
+            if "api_base" not in _CLI_OVERRIDES:
+                provider["api_base"] = ""
+
         for key in ("model", "backend", "api_base"):
             if key in _CLI_OVERRIDES:
                 provider[key] = _CLI_OVERRIDES[key]
+
+        # --model applies to ALL model calls: if compression_model isn't
+        # set explicitly, mirror --model onto it so the compression path
+        # doesn't fall back to a stale (or provider-mismatched) value.
+        if (
+            "model" in _CLI_OVERRIDES
+            and not (provider.get("compression_model") or "").strip()
+        ):
+            provider["compression_model"] = _CLI_OVERRIDES["model"]
 
     return config
 
