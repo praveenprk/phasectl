@@ -3,17 +3,28 @@
 phasectl \- cognitive-mode manager for engineering sessions
 .SH SYNOPSIS
 .B phasectl
+[\fB--model\fR \fINAME\fR]
+[\fB--backend\fR \fINAME\fR]
+[\fB--api-base\fR \fIURL\fR]
 .I COMMAND
 [\fIOPTIONS\fR] [\fIARGS\fR]
 .SH DESCRIPTION
 .B phasectl
-runs a sequence of Anthropic API calls under a named
+runs a sequence of LLM API calls under a named
 .I phase
 \(em orient, ideate, design, impl, validate, snapshot \(em each with its own
 system prompt, temperature, and token budget. Turns are persisted to a local
 SQLite database; when a session is closed, it is compressed into a
 summary and linked in a JSON-backed graph. Symbol lookup for the impl and
 validate phases is delegated to an external MCP-speaking indexer over stdio.
+The LLM backend (anthropic, openai, ollama, openrouter, or a custom
+OpenAI-compatible endpoint) is chosen in
+.IR config.toml ,
+overridable per invocation with
+.BR --model ,
+.BR --backend ,
+and
+.BR --api-base .
 .PP
 The bundled phase prompts describe
 .I posture,
@@ -36,8 +47,8 @@ In the default
 phase (unless
 .BR --no-fuse ),
 phasectl fuses git state of the indexed repo, the closed summary of the last
-session, and the tail of the most recent Claude Code transcript for that repo
-(under
+session, and the tail of the most recent external coding-agent transcript for
+that repo (e.g. Claude Code sessions under
 .IR ~/.claude/projects/ )
 into a
 .B "Resume here:"
@@ -56,15 +67,9 @@ compressed into a summary before the request. In the
 .B impl
 and
 .B validate
-phases the model may call code-lookup tools
-.RB ( search_symbols ,
-.BR get_symbol_source ,
-.BR get_file_outline ,
-.BR get_ranked_context ,
-.BR get_blast_radius ,
-.BR get_untested_symbols )
-served by
-.BR jcodemunch-mcp ;
+phases the model may call whatever tools the configured MCP server exposes
+via
+.BR tools/list ;
 the tool loop runs until the model produces a plain-text reply.
 .SS switch
 .B phasectl switch --phase
@@ -115,20 +120,36 @@ and (when no session is active)
 .B phasectl index
 [\fB--project\fR \fINAME\fR]
 [\fB--path\fR \fIDIR\fR]
+[\fB--register-only\fR]
 [\fB--quiet\fR]
 .PP
-Register a project root and hand it to
+Resolve the indexer binary from
+.RI [tools].mcp_command
+(first token, e.g.
 .B jcodemunch-mcp
-for indexing. The resolved absolute path is stored at
+from
+.RB \(oq "jcodemunch-mcp serve" \(cq)
+and invoke
+.RI \(oq< binary "> index <" abs_path >\(cq
+as a subprocess. The resolved absolute path is stored at
 .RI [projects. <name> ].index_path
 in
 .IR config.toml ,
 so later runs can be spelled just
 .B phasectl index --project
-.IR NAME .
-First-time indexing requires
+.IR NAME
+to re-index the stored path. First-time indexing requires
 .BR --path .
-Exit 1 on missing path, unknown project, or indexer error.
+.PP
+.B --register-only
+stores the path in config without invoking any indexer, for MCP servers
+that handle indexing externally. If the configured binary has no
+.B index
+subcommand, phasectl prints a hint to run
+.B --register-only
+instead.
+.PP
+Exit 1 on missing path, missing binary, or indexer error.
 .SS query
 .B phasectl query
 \fISYMBOL\fR
@@ -188,11 +209,14 @@ with a reason on failure. Exit 0 if all pass, 1 if any fail.
 .SS auth set
 .B phasectl auth set
 .PP
-Read an Anthropic API key from a hidden prompt and store it at
+Read an LLM API key from a hidden prompt and store it (macOS Keychain,
+freedesktop secret-service, or
 .I ~/.config/phasectl/credentials
-(chmod 600). Consulted only when
+chmod 600, in that preference order). Consulted only when
+.B $PHASECTL_API_KEY
+and
 .B $ANTHROPIC_API_KEY
-is unset.
+are unset.
 .SS auth status
 .B phasectl auth status
 .PP
@@ -213,9 +237,20 @@ is created on first run and read by every command.
 .PP
 .RS 4
 .nf
-[api]
-model              = "claude-sonnet-4-6"          # chat model
-compression_model  = "claude-haiku-4-5-20251001"  # close / seed / loose --synthesize
+[provider]
+# backend: anthropic | openai | ollama | openrouter | custom
+backend = "anthropic"
+
+# leave empty to let the backend pick its own sensible default
+#   anthropic:  claude-sonnet-4-6, claude-haiku-4-5-20251001
+#   openai:     gpt-4o, gpt-4o-mini
+#   ollama:     llama3.1:70b, llama3.1:8b
+#   openrouter: anthropic/claude-sonnet-4-6, openai/gpt-4o
+model             = ""
+compression_model = ""
+
+# leave empty for provider defaults, or set for custom endpoints
+api_base = ""
 
 [storage]
 db_path = ""            # empty = ~/.config/phasectl/sessions.db
@@ -227,12 +262,27 @@ path = ""               # empty = ~/.config/phasectl/graph.json
 project = "myproject"   # used when a command omits --project
 
 [claude_code]
-projects_dir = ""       # override auto-detected ~/.claude/projects lookup
+projects_dir = ""       # override the auto-detected coding-agent transcript dir
+
+[tools]
+mcp_command = "jcodemunch-mcp serve"   # spawned for indexing and code-lookup tools
 
 [projects.myproject]
 index_path = "/abs/path/to/myproject"   # written by 'phasectl index'
 .fi
 .RE
+.PP
+Provider values can be overridden per invocation with
+.BR --model ,
+.BR --backend ,
+and
+.BR --api-base
+on the outer
+.B phasectl
+call, or with
+.B --model
+on
+.BR chat .
 .SH PHASES
 The bundled phases live in the package and can be inspected via
 .BR "phasectl check" .
@@ -260,9 +310,11 @@ You are in impl mode: ...
 Global settings.
 .TP
 .B ~/.config/phasectl/credentials
-Anthropic API key, plain text, chmod 600. Read only when
+LLM API key, plain text, chmod 600. Read only when neither
+.B $PHASECTL_API_KEY
+nor
 .B $ANTHROPIC_API_KEY
-is unset.
+is set, and only when the system keychain doesn't have the key.
 .TP
 .B ~/.config/phasectl/sessions.db
 SQLite database with
@@ -280,9 +332,15 @@ Optional per-user phase overrides. Each file replaces the bundled phase of
 the same name.
 .SH ENVIRONMENT
 .TP
+.B PHASECTL_API_KEY
+LLM API key. When set, wins over
+.B $ANTHROPIC_API_KEY
+and every stored source.
+.TP
 .B ANTHROPIC_API_KEY
-API key. When set, wins over
-.BR ~/.config/phasectl/credentials .
+LLM API key. Consulted when
+.B $PHASECTL_API_KEY
+is unset. Wins over stored sources.
 .TP
 .B XDG_CONFIG_HOME
 Base directory for the phasectl config tree. Defaults to
@@ -291,7 +349,8 @@ Base directory for the phasectl config tree. Defaults to
 .B CLAUDE_CONFIG_DIR
 Consulted when
 .B start
-looks for Claude Code transcripts to fuse. Defaults to
+looks for coding-agent transcripts to fuse (functional dependency on
+Claude Code's on-disk layout). Defaults to
 .BR ~/.claude .
 .SH EXIT CODES
 .TP

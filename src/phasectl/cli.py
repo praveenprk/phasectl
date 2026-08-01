@@ -1,5 +1,7 @@
 import sys
 import json
+import shlex
+import subprocess
 import typer
 import tomllib
 import os
@@ -39,6 +41,9 @@ from .seed import build_seed_block
 from .auth import AuthError, key_source, save_api_key, remove_api_key
 
 
+_CLI_OVERRIDES: dict = {}
+
+
 app = typer.Typer(
     help=(
         "phasectl — a cognitive-mode manager for engineering sessions.\n\n"
@@ -46,7 +51,7 @@ app = typer.Typer(
         "validate, snapshot) with its own system prompt, temperature, and token "
         "budget. Turns are stored in SQLite; closed sessions are summarised and "
         "linked in a local graph. Symbol lookup is delegated to an MCP-speaking "
-        "code indexer (default: jcodemunch-mcp)."
+        "code indexer configured in tools.mcp_command in config.toml."
     ),
     epilog="Run 'phasectl COMMAND --help' for details on any command.",
     no_args_is_help=True,
@@ -62,6 +67,30 @@ auth_app = typer.Typer(
 app.add_typer(auth_app, name="auth")
 
 
+@app.callback()
+def main(
+    model: str = typer.Option(
+        None, "--model", "-m",
+        help="Override the chat model for this invocation. Wins over config.toml.",
+    ),
+    backend: str = typer.Option(
+        None, "--backend", "-b",
+        help="LLM backend: anthropic, openai, ollama, openrouter, custom. Wins over config.toml.",
+    ),
+    api_base: str = typer.Option(
+        None, "--api-base",
+        help="Override the API base URL for this invocation. Wins over config.toml.",
+    ),
+):
+    """phasectl — cognitive-mode manager for engineering sessions."""
+    if model is not None:
+        _CLI_OVERRIDES["model"] = model
+    if backend is not None:
+        _CLI_OVERRIDES["backend"] = backend
+    if api_base is not None:
+        _CLI_OVERRIDES["api_base"] = api_base
+
+
 def _diag(msg: str, quiet: bool = False) -> None:
     if not quiet:
         print(msg, file=sys.stderr)
@@ -72,23 +101,43 @@ def _die_on_auth_error(exc: AuthError) -> None:
     raise typer.Exit(exc.exit_code)
 
 
+_DEFAULT_CONFIG_TEMPLATE = '''\
+[provider]
+# backend: anthropic | openai | ollama | openrouter | custom
+backend = "anthropic"
+
+# model names depend on your backend:
+#   anthropic:  claude-sonnet-4-6, claude-haiku-4-5-20251001
+#   openai:     gpt-4o, gpt-4o-mini
+#   ollama:     llama3.1:70b, llama3.1:8b
+#   openrouter: anthropic/claude-sonnet-4-6, openai/gpt-4o
+# Leave empty to let the backend pick its own sensible default.
+model = ""
+compression_model = ""
+
+# api_base: leave empty for provider defaults, or set for custom endpoints
+#   anthropic:  https://api.anthropic.com (default)
+#   openai:     https://api.openai.com/v1 (default)
+#   ollama:     http://localhost:11434/v1 (default)
+#   openrouter: https://openrouter.ai/api/v1 (default)
+api_base = ""
+
+[storage]
+db_path = ""
+
+[graph]
+path = ""
+
+[defaults]
+project = "myproject"
+'''
+
+
 def _load_config() -> dict:
     config_file = get_config_file()
     if not config_file.exists():
         config_file.parent.mkdir(parents=True, exist_ok=True)
-        config_file.write_text(
-            '[provider]\n'
-            'backend = "anthropic"\n'
-            'api_base = ""\n'
-            'model = "claude-sonnet-4-6"\n'
-            'compression_model = "claude-haiku-4-5-20251001"\n\n'
-            '[storage]\n'
-            'db_path = ""\n\n'
-            '[graph]\n'
-            'path = ""\n\n'
-            '[defaults]\n'
-            'project = "contextos"\n'
-        )
+        config_file.write_text(_DEFAULT_CONFIG_TEMPLATE)
     with open(config_file, "rb") as f:
         config = tomllib.load(f)
 
@@ -98,11 +147,18 @@ def _load_config() -> dict:
         config["provider"] = {
             "backend": "anthropic",
             "api_base": api.get("api_base", ""),
-            "model": api.get("model", "claude-sonnet-4-6"),
-            "compression_model": api.get(
-                "compression_model", "claude-haiku-4-5-20251001"
-            ),
+            "model": api.get("model", ""),
+            "compression_model": api.get("compression_model", ""),
         }
+
+    # CLI overrides win over the file. Applied last so this call reflects flags
+    # passed to the outer `phasectl --backend X --model Y ...` callback.
+    if _CLI_OVERRIDES:
+        provider = config.setdefault("provider", {})
+        for key in ("model", "backend", "api_base"):
+            if key in _CLI_OVERRIDES:
+                provider[key] = _CLI_OVERRIDES[key]
+
     return config
 
 
@@ -127,7 +183,7 @@ def start(
     phase: str = typer.Option("orient", "--phase", help="Phase to open in (orient|ideate|design|impl|validate|snapshot; user overrides in ~/.config/phasectl/phases also accepted)."),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress the diagnostic lines on stderr; the session id and any resume block still print on stdout."),
     no_fuse: bool = typer.Option(
-        False, "--no-fuse", help="Skip the orient-phase fusion of git state + the last Claude Code transcript. The last phasectl session summary is still injected.",
+        False, "--no-fuse", help="Skip the orient-phase fusion of git state + the last external coding-agent transcript. The last phasectl session summary is still injected.",
     ),
     seed: list[str] = typer.Option(
         None, "--seed", help="Path to a .md/.txt/.json file whose gist is compressed by the LLM and injected as system context. Repeat for multiple files.",
@@ -141,9 +197,9 @@ def start(
     In the default 'orient' phase (unless --no-fuse), phasectl fuses three
     signals into a 'Resume here:' block on stdout: (1) git state of the
     indexed repo, (2) the closed summary of the last session, (3) the tail
-    of the most recent Claude Code transcript for that repo (if one is
-    found under ~/.claude/projects/…). Any --seed files are compressed and
-    added as extra system context.
+    of the most recent external coding-agent transcript for that repo (if
+    one is found). Any --seed files are compressed and added as extra
+    system context.
     """
     config = _load_config()
     store = _get_store(config)
@@ -189,7 +245,7 @@ def start(
                 if cc_path:
                     cc_context = extract_last_context(cc_path)
             except Exception as e:
-                _diag(f"[orient] Claude Code lookup skipped: {e}", quiet=quiet)
+                _diag(f"[orient] coding-agent transcript lookup skipped: {e}", quiet=quiet)
         else:
             _diag(
                 f"[orient] no indexed path for '{project}' — fusion limited to session summary.",
@@ -270,21 +326,26 @@ def start(
 @app.command()
 def chat(
     message: str = typer.Argument(..., help="Message to send. Wrap in quotes for anything longer than one word."),
+    model: str = typer.Option(
+        None, "--model", "-m",
+        help="Override the chat model for this single message. Wins over config.toml and the global --model.",
+    ),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress the 'Compressing tail turns…' diagnostic on stderr."),
 ):
-    """Send a message in the active session and print Claude's reply.
+    """Send a message in the active session and print the reply.
 
     Uses the current phase's system prompt, temperature, and token budget.
     If the running token estimate exceeds the phase budget, older turns are
     compressed into a summary before the request. In the impl and validate
-    phases the model can call code-lookup tools (search_symbols,
-    get_symbol_source, get_file_outline, get_ranked_context,
-    get_blast_radius, get_untested_symbols) served by jcodemunch-mcp; the
-    tool loop runs until the model produces a plain text reply.
+    phases the model can call code-lookup tools discovered from the
+    configured MCP server; the tool loop runs until the model produces a
+    plain text reply.
 
     Exit codes: 3 if no session is active, 2 for other API errors,
     1 or 2 for auth errors (see 'phasectl auth --help').
     """
+    if model is not None:
+        _CLI_OVERRIDES["model"] = model
     config = _load_config()
     store = _get_store(config)
     project = config["defaults"]["project"]
@@ -519,23 +580,83 @@ def status(
                 print("No active session.")
 
 
+def _mcp_binary_from_config(config: dict) -> str:
+    raw = ((config.get("tools") or {}).get("mcp_command") or "").strip()
+    if not raw:
+        raw = "jcodemunch-mcp serve"
+    tokens = shlex.split(raw)
+    return tokens[0] if tokens else ""
+
+
+def _run_index(binary: str, path: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [binary, "index", path],
+        capture_output=True, text=True, timeout=120,
+    )
+
+
+def _parse_symbol_count(stdout: str) -> str:
+    """Extract a human summary from the indexer's stdout.
+
+    Tries JSON first (looks for common count keys). Falls back to a
+    single-line stdout tail.
+    """
+    text = (stdout or "").strip()
+    if not text:
+        return "indexed (no output from indexer)"
+
+    def _first_int(d: dict, keys: tuple[str, ...]) -> int | None:
+        for k in keys:
+            v = d.get(k)
+            if isinstance(v, int):
+                return v
+        return None
+
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            syms = _first_int(data, ("symbol_count", "symbols", "count"))
+            files = _first_int(data, ("file_count", "files_count", "num_files"))
+            if syms is not None and files is not None:
+                return f"indexed: {syms} symbols across {files} files"
+            if syms is not None:
+                return f"indexed: {syms} symbols"
+            if files is not None:
+                return f"indexed: {files} files"
+            msg = data.get("message") or data.get("status")
+            if isinstance(msg, str):
+                return f"indexed: {msg}"
+    except (ValueError, TypeError):
+        pass
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    return f"indexed: {lines[-1]}" if lines else "indexed"
+
+
 @app.command()
 def index(
-    project: str = typer.Option("contextos", "--project", "-p", help="Project name to store the index_path under, in config.toml."),
-    path: str = typer.Option(None, "--path", help="Absolute or relative path to the project root. If omitted, the previously stored path for --project is reused."),
-    tool: str = typer.Option(None, "--tool", help="MCP tool to invoke for indexing. Defaults to the first discovered tool whose name contains 'index'."),
+    project: str = typer.Option("myproject", "--project", "-p", help="Project name to store the index_path under, in config.toml."),
+    path: str = typer.Option(None, "--path", help="Absolute or relative path to the project root. If omitted, the previously stored path for --project is re-indexed."),
+    register_only: bool = typer.Option(
+        False, "--register-only",
+        help="Store the path in config without invoking any indexer. For MCP servers that handle indexing externally.",
+    ),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress the 'Indexing …' diagnostic on stderr."),
 ):
     """Index a project so 'phasectl query' and the impl/validate tools can find its symbols.
 
-    Delegates to the configured MCP server (default: 'jcodemunch-mcp
-    serve'). The tool used for indexing is discovered at runtime — the
-    first tool whose name contains 'index' — unless --tool names one
-    explicitly. The resolved absolute path is written to config.toml at
-    [projects.<name>].index_path.
+    Resolves the indexer binary from tools.mcp_command in config.toml
+    (first token, e.g. 'jcodemunch-mcp' from 'jcodemunch-mcp serve') and
+    invokes `<binary> index <abs_path>` as a subprocess. The resolved
+    path is written to config.toml at projects.<name>.index_path.
+
+    If --path is omitted and the project already has a stored path,
+    that path is re-indexed. Use --register-only for MCP servers that
+    do their own indexing externally.
     """
+    config = _load_config()
+
     if path is None:
-        stored = get_index_path(project)
+        stored = get_index_path(project, config)
         if stored is None:
             print(
                 f"no stored path for project '{project}'. Pass --path <path> for the first index.",
@@ -549,40 +670,57 @@ def index(
         raise typer.Exit(1)
 
     abs_path = os.path.abspath(path)
-    config = _load_config()
-    _diag(f"Indexing {abs_path} as {project}...", quiet=quiet)
 
-    tool_executor = ToolExecutor(project=project)
-    try:
-        discovered = tool_executor.discovered_tools(config)
-        if not discovered:
-            print("no tools discovered from MCP server", file=sys.stderr)
-            raise typer.Exit(1)
+    if register_only:
+        set_index_path(project, abs_path)
+        print(f"registered: {project} → {abs_path}")
+        return
 
-        tool_name = tool
-        if not tool_name:
-            for t in discovered:
-                if "index" in (t.get("name") or "").lower():
-                    tool_name = t["name"]
-                    break
-        if not tool_name:
-            names = ", ".join(t.get("name", "") for t in discovered)
-            print(
-                f"no indexing tool discovered on MCP server. Pass --tool NAME. Available: {names}",
-                file=sys.stderr,
-            )
-            raise typer.Exit(1)
-
-        result = tool_executor.execute(tool_name, {"path": abs_path}, config=config)
-    finally:
-        tool_executor.close()
-
-    if "ERROR" in result:
-        print(result, file=sys.stderr)
+    binary = _mcp_binary_from_config(config)
+    if not binary:
+        print(
+            "no MCP indexer binary configured. Set [tools].mcp_command in config.toml "
+            "or pass --register-only to store the path without indexing.",
+            file=sys.stderr,
+        )
         raise typer.Exit(1)
 
+    _diag(f"Indexing {abs_path} as {project} via {binary}...", quiet=quiet)
+
+    try:
+        proc = _run_index(binary, abs_path)
+    except FileNotFoundError:
+        print(
+            f"indexer binary not found on PATH: {binary}. Install it, or pass "
+            "--register-only to store the path without indexing.",
+            file=sys.stderr,
+        )
+        raise typer.Exit(1)
+    except subprocess.TimeoutExpired:
+        print(f"{binary} index timed out after 120s", file=sys.stderr)
+        raise typer.Exit(1)
+
+    if proc.returncode != 0:
+        stderr_tail = (proc.stderr or "").strip().splitlines()
+        hint = stderr_tail[-1] if stderr_tail else ""
+        looks_unknown = (
+            "unknown" in (proc.stderr or "").lower()
+            or "usage" in (proc.stderr or "").lower()
+            or "no such" in (proc.stderr or "").lower()
+        )
+        if looks_unknown:
+            print(
+                f"{binary} does not support indexing. Index your codebase manually, "
+                f"then register: phasectl index --project {project} --path {abs_path} --register-only",
+                file=sys.stderr,
+            )
+        else:
+            print(f"{binary} index failed: {hint or proc.returncode}", file=sys.stderr)
+        raise typer.Exit(1)
+
+    summary = _parse_symbol_count(proc.stdout)
     set_index_path(project, abs_path)
-    print(result)
+    print(summary)
 
 
 @app.command()

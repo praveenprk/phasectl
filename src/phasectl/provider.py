@@ -175,6 +175,11 @@ class OpenAICompatProvider(LLMProvider):
         "ollama": "http://localhost:11434/v1",
     }
 
+    _DEFAULT_MODELS = {
+        "openai": ("gpt-4o", "gpt-4o-mini"),
+        "openrouter": ("openai/gpt-4o", "openai/gpt-4o-mini"),
+    }
+
     def __init__(self, config: dict):
         import httpx
         p = _provider_cfg(config)
@@ -185,15 +190,24 @@ class OpenAICompatProvider(LLMProvider):
         if not base:
             raise RuntimeError(
                 f"provider backend '{backend}' has no default api_base; "
-                "set [provider].api_base in config.toml"
+                "set provider.api_base in config.toml"
             )
         self._base = base.rstrip("/")
-        self._model = p.get("model") or ""
-        self._compression_model = p.get("compression_model") or self._model
-        if not self._model:
+        model = (p.get("model") or "").strip()
+        compression_model = (p.get("compression_model") or "").strip()
+        if not model:
+            default_chat, _ = self._DEFAULT_MODELS.get(backend, ("", ""))
+            model = default_chat
+        if not compression_model:
+            _, default_compress = self._DEFAULT_MODELS.get(backend, ("", ""))
+            compression_model = default_compress or model
+        if not model:
             raise RuntimeError(
-                "provider.model is required for OpenAI-compatible backends"
+                f"provider backend '{backend}' has no default model; "
+                "set provider.model in config.toml (or pass --model)"
             )
+        self._model = model
+        self._compression_model = compression_model
         # ollama does not require a key; others do
         key = get_api_key()
         if not key and backend != "ollama":

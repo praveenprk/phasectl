@@ -2,7 +2,7 @@
 
 At connect time we call `tools/list` and expose whatever the server
 offers — no hardcoded tool names, no assumed schemas, no wrapping. The
-chat loop hands Claude the exact tool definitions the server surfaced;
+chat loop hands the model the exact tool definitions the server surfaced;
 `execute(name, args)` is a straight passthrough to `client.call_tool`.
 
 Phase filtering is heuristic by default (impl gets the full surface;

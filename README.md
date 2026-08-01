@@ -43,7 +43,7 @@ uncommitted, unmerged, or unpushed thread in the repo.
 
 | command               | what it does                                                                 |
 |-----------------------|------------------------------------------------------------------------------|
-| `phasectl start`      | Open a new session; in `orient` fuses git state + last session + last Claude Code transcript into a `Resume here:` block. |
+| `phasectl start`      | Open a new session; in `orient` fuses git state + last session + last coding-agent transcript (e.g. Claude Code) into a `Resume here:` block. |
 | `phasectl chat MSG`   | Send a message under the current phase's prompt. Compresses old turns when the budget is exceeded. In `impl`/`validate` the model can call code-lookup tools. |
 | `phasectl switch`     | Change the active session's phase. Prior turns remain visible.               |
 | `phasectl close`      | Summarise the session using the `snapshot` prompt; link any `RFC-<n>` / `DECISION-<n>` tokens into the graph. |
@@ -93,9 +93,21 @@ phasectl stores everything under `$XDG_CONFIG_HOME/phasectl` (default
 `config.toml` is created on first run with these sections:
 
 ```toml
-[api]
-model              = "claude-sonnet-4-6"          # for phasectl chat
-compression_model  = "claude-haiku-4-5-20251001"  # for close / compress_tail / seed / loose --synthesize
+[provider]
+# backend: anthropic | openai | ollama | openrouter | custom
+backend = "anthropic"
+
+# model names depend on your backend:
+#   anthropic:  claude-sonnet-4-6, claude-haiku-4-5-20251001
+#   openai:     gpt-4o, gpt-4o-mini
+#   ollama:     llama3.1:70b, llama3.1:8b
+#   openrouter: anthropic/claude-sonnet-4-6, openai/gpt-4o
+# Leave empty for the backend's own sensible default.
+model = ""
+compression_model = ""
+
+# api_base: leave empty for provider defaults, or set for custom endpoints
+api_base = ""
 
 [storage]
 db_path = ""            # empty = use ~/.config/phasectl/sessions.db
@@ -107,32 +119,44 @@ path = ""               # empty = use ~/.config/phasectl/graph.json
 project = "myproject"   # used when a command omits --project
 
 [claude_code]
-projects_dir = ""       # override the auto-detected ~/.claude/projects lookup
+projects_dir = ""       # override the auto-detected ~/.claude/projects lookup for the orient-phase resume fuse
 
 [projects.myproject]
 index_path = "/abs/path/to/myproject"   # written by 'phasectl index'
 ```
 
-`ANTHROPIC_API_KEY` in the environment wins over `credentials`.
-`XDG_CONFIG_HOME` moves the whole config directory.
+`PHASECTL_API_KEY` or `ANTHROPIC_API_KEY` in the environment wins over
+`credentials`. `XDG_CONFIG_HOME` moves the whole config directory.
+
+Every value in `[provider]` can also be overridden per-invocation:
+
+```sh
+phasectl --model gpt-4o chat "hello"
+phasectl --backend ollama --model llama3.1:70b chat "what is this?"
+phasectl --api-base http://localhost:11434/v1 chat "hello"
+phasectl chat --model gpt-4o-mini "quick question"   # per-message
+```
 
 ## MCP tools
 
 Code-aware operations are delegated to an external process that speaks the
-Model Context Protocol over stdio. phasectl spawns it as
-`jcodemunch-mcp serve` and calls a single `order` tool with an action name
-(`search_symbols`, `get_symbol_source`, `get_file_outline`,
-`get_ranked_context`, `get_blast_radius`, `get_untested_symbols`,
-`index_folder`, `get_call_hierarchy`) plus arguments.
+Model Context Protocol over stdio. The command is `[tools].mcp_command` in
+`config.toml` (default: `jcodemunch-mcp serve`); its `tools/list` output is
+what phasectl exposes to the model — no hardcoded schemas.
 
-Swapping in a different indexer means editing the command in
-`src/phasectl/tools.py::ToolExecutor._get_client`. Anything on `PATH` that
-speaks MCP and exposes the same action names will work; there is no plugin
-registry.
+`phasectl index` invokes `<binary> index <path>` as a subprocess. If your
+MCP server doesn't ship an `index` subcommand, index it out-of-band and
+register the path with `phasectl index --project <name> --path <dir>
+--register-only`.
 
-Impl and validate phases expose a subset of the same actions to Claude as
-Anthropic tools (see `PHASE_TOOLS` in `tools.py`). The chat loop drives
-tool_use rounds automatically until the model produces a plain-text turn.
+Impl and validate phases expose the discovered MCP tools to the model as
+provider-native tool definitions. The chat loop drives tool_use rounds
+automatically until the model produces a plain-text turn.
+
+phasectl reads session transcripts from external coding agents (e.g.
+Claude Code) stored under `~/.claude/projects/` to fuse into the
+`orient`-phase resume block. Point `[claude_code].projects_dir` at a
+different location if your agent stores transcripts elsewhere.
 
 ## Design philosophy
 
