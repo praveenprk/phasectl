@@ -39,8 +39,22 @@ from .seed import build_seed_block
 from .auth import AuthError, key_source, save_api_key
 
 
-app = typer.Typer()
-auth_app = typer.Typer(help="Manage the Anthropic API key.")
+app = typer.Typer(
+    help=(
+        "phasectl — a cognitive-mode manager for engineering sessions.\n\n"
+        "Each session runs under a named phase (orient, ideate, design, impl, "
+        "validate, snapshot) with its own system prompt, temperature, and token "
+        "budget. Turns are stored in SQLite; closed sessions are summarised and "
+        "linked in a local graph. Symbol lookup is delegated to an MCP-speaking "
+        "code indexer (default: jcodemunch-mcp)."
+    ),
+    epilog="Run 'phasectl COMMAND --help' for details on any command.",
+    no_args_is_help=True,
+)
+auth_app = typer.Typer(
+    help="Manage the Anthropic API key (env or ~/.config/phasectl/credentials).",
+    no_args_is_help=True,
+)
 app.add_typer(auth_app, name="auth")
 
 
@@ -92,17 +106,28 @@ def _derive_current_phase(store: SQLiteStore, session_data: dict) -> str:
 
 @app.command()
 def start(
-    project: str = typer.Option("contextos", "--project", "-p", help="Project name"),
-    phase: str = typer.Option("orient", "--phase", help="Starting phase"),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress diagnostic output"),
+    project: str = typer.Option("contextos", "--project", "-p", help="Project name; scopes sessions, index path, and graph."),
+    phase: str = typer.Option("orient", "--phase", help="Phase to open in (orient|ideate|design|impl|validate|snapshot; user overrides in ~/.config/phasectl/phases also accepted)."),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress the diagnostic lines on stderr; the session id and any resume block still print on stdout."),
     no_fuse: bool = typer.Option(
-        False, "--no-fuse", help="Skip git + Claude Code fusion in orient (session summary only)"
+        False, "--no-fuse", help="Skip the orient-phase fusion of git state + the last Claude Code transcript. The last phasectl session summary is still injected.",
     ),
     seed: list[str] = typer.Option(
-        None, "--seed", help="Prime the session with a text file's gist (repeatable)"
+        None, "--seed", help="Path to a .md/.txt/.json file whose gist is compressed by the LLM and injected as system context. Repeat for multiple files.",
     ),
 ):
-    """Start a new session."""
+    """Open a new session for a project in the chosen phase.
+
+    Fails with exit 1 if a session is already active for the project
+    (close it first) or if the phase name is unknown.
+
+    In the default 'orient' phase (unless --no-fuse), phasectl fuses three
+    signals into a 'Resume here:' block on stdout: (1) git state of the
+    indexed repo, (2) the closed summary of the last session, (3) the tail
+    of the most recent Claude Code transcript for that repo (if one is
+    found under ~/.claude/projects/…). Any --seed files are compressed and
+    added as extra system context.
+    """
     config = _load_config()
     store = _get_store(config)
 
@@ -218,10 +243,22 @@ def start(
 
 @app.command()
 def chat(
-    message: str = typer.Argument(..., help="Your message to Claude"),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress diagnostic output"),
+    message: str = typer.Argument(..., help="Message to send. Wrap in quotes for anything longer than one word."),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress the 'Compressing tail turns…' diagnostic on stderr."),
 ):
-    """Send a message in the current session."""
+    """Send a message in the active session and print Claude's reply.
+
+    Uses the current phase's system prompt, temperature, and token budget.
+    If the running token estimate exceeds the phase budget, older turns are
+    compressed into a summary before the request. In the impl and validate
+    phases the model can call code-lookup tools (search_symbols,
+    get_symbol_source, get_file_outline, get_ranked_context,
+    get_blast_radius, get_untested_symbols) served by jcodemunch-mcp; the
+    tool loop runs until the model produces a plain text reply.
+
+    Exit codes: 3 if no session is active, 2 for other API errors,
+    1 or 2 for auth errors (see 'phasectl auth --help').
+    """
     config = _load_config()
     store = _get_store(config)
     project = config["defaults"]["project"]
@@ -295,10 +332,16 @@ def chat(
 
 @app.command()
 def switch(
-    phase: str = typer.Option(..., "--phase", help="Phase to switch to"),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress diagnostic output"),
+    phase: str = typer.Option(..., "--phase", help="Phase to switch to (orient|ideate|design|impl|validate|snapshot, or any user-defined phase in ~/.config/phasectl/phases)."),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress the confirmation on stderr."),
 ):
-    """Switch the current phase."""
+    """Switch the active session to a different phase.
+
+    Subsequent 'phasectl chat' calls will use the new phase's system
+    prompt, temperature, token budget, and tool set. Prior turns are kept
+    and remain visible to the model. Exit 3 if no session is active, 1 if
+    the phase name is unknown.
+    """
     config = _load_config()
     store = _get_store(config)
     project = config["defaults"]["project"]
@@ -330,9 +373,18 @@ def switch(
 
 @app.command()
 def close(
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress diagnostic output"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Reserved; snapshot output is a single line and is always printed."),
 ):
-    """Close the current session with a snapshot compression."""
+    """Close the active session and produce a snapshot summary.
+
+    All uncompressed turns are handed to the 'snapshot' phase prompt via
+    the compression model. The resulting summary is stored on the session
+    row, and any RFC-<n> / DECISION-<n> tokens found in it are linked into
+    the local session graph (~/.config/phasectl/graph.json).
+
+    Prints '<session-id> <turns>→1 <tokens>t' on stdout.
+    Exit 3 if no session is active, 2 if compression fails.
+    """
     config = _load_config()
     store = _get_store(config)
     project = config["defaults"]["project"]
@@ -375,10 +427,15 @@ def close(
 
 @app.command()
 def status(
-    json_flag: bool = typer.Option(False, "--json", help="Output JSON"),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress diagnostic output"),
+    json_flag: bool = typer.Option(False, "--json", help="Emit a JSON object with session_id, project, phase, tokens, turns (and last_session when no session is active)."),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Reserved; status output is already terse."),
 ):
-    """Show current session status."""
+    """Show whether a session is active for the default project.
+
+    With an active session, prints its short id, phase, token estimate and
+    turn count. With none, prints the date and short id of the most recent
+    closed session, or 'No active session.' if there is no history.
+    """
     config = _load_config()
     store = _get_store(config)
     project = config["defaults"]["project"]
@@ -438,11 +495,19 @@ def status(
 
 @app.command()
 def index(
-    project: str = typer.Option("contextos", "--project", "-p", help="Project name"),
-    path: str = typer.Option(None, "--path", help="Path to project root (defaults to stored index_path)"),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress diagnostic output"),
+    project: str = typer.Option("contextos", "--project", "-p", help="Project name to store the index_path under, in config.toml."),
+    path: str = typer.Option(None, "--path", help="Absolute or relative path to the project root. If omitted, the previously stored path for --project is reused."),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress the 'Indexing …' diagnostic on stderr."),
 ):
-    """Index a project for symbol search via jCodeMunch."""
+    """Index a project so 'phasectl query' and the impl/validate tools can find its symbols.
+
+    Requires 'jcodemunch-mcp' on PATH; it is invoked over stdio to perform
+    the indexing. The resolved absolute path is written to config.toml at
+    [projects.<name>].index_path so subsequent runs can be spelled just
+    'phasectl index --project <name>' (or, when <name> matches the
+    default_project, plain 'phasectl index'). First-time indexing requires
+    --path. Exit 1 on missing path, unknown project, or indexer error.
+    """
     if path is None:
         stored = get_index_path(project)
         if stored is None:
@@ -476,12 +541,17 @@ def index(
 
 @app.command()
 def query(
-    symbol: str = typer.Argument(..., help="Symbol name or pattern to search for"),
-    project: str = typer.Option("contextos", "--project", "-p", help="Project name"),
-    json_flag: bool = typer.Option(False, "--json", help="Output JSON"),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress diagnostic output"),
+    symbol: str = typer.Argument(..., help="Symbol name or pattern to search for (matched by the indexer's search_symbols action)."),
+    project: str = typer.Option("contextos", "--project", "-p", help="Project name whose stored index_path holds the index to search."),
+    json_flag: bool = typer.Option(False, "--json", help="Print the indexer's raw JSON result instead of one match per line."),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Reserved; query output goes to stdout unchanged."),
 ):
-    """Query symbols via jCodeMunch (no active session required)."""
+    """Search the indexed symbols of a project. Standalone — no session needed.
+
+    Requires a prior 'phasectl index --project <name> --path <dir>'.
+    Exit 4 if the project has no stored index or the indexer reports an
+    error.
+    """
     index_path = get_index_path(project)
     if not index_path:
         print(f"no index for {project}. run: phasectl index --project {project} --path <path>", file=sys.stderr)
@@ -507,11 +577,18 @@ def query(
 
 @app.command()
 def graph(
-    project: str = typer.Option("contextos", "--project", "-p", help="Project name"),
-    json_flag: bool = typer.Option(False, "--json", help="Output JSON"),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress diagnostic output"),
+    project: str = typer.Option("contextos", "--project", "-p", help="Project name to filter the graph on."),
+    json_flag: bool = typer.Option(False, "--json", help="Emit the graph as a JSON {sessions: [...]} document."),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Reserved."),
 ):
-    """Query session graph from Kuzu (no active session required)."""
+    """Show closed sessions with their linked RFCs and DECISIONs.
+
+    Reads ~/.config/phasectl/graph.json (a NetworkX MultiDiGraph on disk).
+    RFC-<n> and DECISION-<n> tokens are extracted from each session's
+    closing summary and attached to the session node. Standalone — no
+    session needed. Prints nothing (or an empty JSON) when nothing has
+    been closed yet.
+    """
     from .config import get_graph_path
     from .graph import GraphStore
 
@@ -550,14 +627,20 @@ def graph(
 
 @app.command()
 def loose(
-    project: str = typer.Option(None, "--project", "-p", help="Project name (uses stored index path)"),
-    path: str = typer.Option(None, "--path", help="Path to any git repo (bypasses --project)"),
-    base: str = typer.Option("main", "--base", help="Base branch to compare against"),
-    json_flag: bool = typer.Option(False, "--json", help="Emit collected data as JSON"),
-    synthesize: bool = typer.Option(False, "--synthesize", help="Add one LLM-synthesized top line naming the most stale thread"),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress the header line and diagnostics"),
+    project: str = typer.Option(None, "--project", "-p", help="Project name; uses its stored index_path as the repo. Falls back to the default_project if omitted."),
+    path: str = typer.Option(None, "--path", help="Path to any git repository. Bypasses --project and works on repos phasectl has never indexed."),
+    base: str = typer.Option("main", "--base", help="Base branch to compare against. Falls back to 'master' or origin/HEAD if the requested branch doesn't exist."),
+    json_flag: bool = typer.Option(False, "--json", help="Emit the raw collected data as JSON (repo, current_branch, base, uncommitted, unmerged, stashes, unpushed, worktrees)."),
+    synthesize: bool = typer.Option(False, "--synthesize", help="Call the compression model to add one 'Most stale: …' top line naming the coldest loose thread. Requires the API key."),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Drop the 'In flight across …' header line."),
 ):
-    """Surface every loose thread in a repo: stashes, unmerged branches, unpushed commits, worktrees, uncommitted work."""
+    """List every loose thread in a git repo: uncommitted files, unmerged branches, stashes, unpushed commits, extra worktrees.
+
+    Standalone — no session needed. Works on any git repo via --path;
+    otherwise reads the project's stored index_path. Exits 1 if no repo
+    can be resolved or the path is not a git repo. --synthesize is the
+    only sub-feature that touches the API.
+    """
     config = _load_config()
     active_project = config.get("defaults", {}).get("project", "")
 
@@ -603,10 +686,24 @@ def loose(
 
 @app.command()
 def check(
-    project: str = typer.Option(None, "--project", "-p", help="Project name (defaults to config)"),
-    json_flag: bool = typer.Option(False, "--json", help="Output JSON"),
+    project: str = typer.Option(None, "--project", "-p", help="Project name for the index/git checks. Defaults to defaults.project from config."),
+    json_flag: bool = typer.Option(False, "--json", help="Emit a JSON {ok, project, checks:[{name, ok, message}]} document."),
 ):
-    """Smoke-test the pipeline: config, auth, db, phases, index, mcp, git. No LLM calls."""
+    """Smoke-test every subsystem. No LLM calls, no API key required.
+
+    Reports pass/fail for each of:
+      config  — config.toml exists and is readable
+      auth    — an API key is discoverable (env or credentials file)
+      db      — sessions.db opens; count of sessions
+      phases  — every phase TOML loads (bundled + user overrides)
+      index   — the project has a stored index_path and it exists
+      mcp     — jcodemunch-mcp is reachable and completes the handshake
+      git     — the indexed repo (or cwd) is a git working tree
+
+    Every check catches its own errors; a failing one prints ✗ with a
+    reason and the command still runs the rest. Exit 0 if all pass, 1 if
+    any fail.
+    """
     config = _load_config()
     project = project or config.get("defaults", {}).get("project", "") or ""
 
@@ -720,7 +817,12 @@ def check(
 
 @auth_app.command("set")
 def auth_set():
-    """Store your Anthropic API key at ~/.config/phasectl/credentials (chmod 600)."""
+    """Read an Anthropic API key from a hidden prompt and store it at ~/.config/phasectl/credentials (chmod 600).
+
+    The credentials file is consulted only when $ANTHROPIC_API_KEY is
+    unset; if the env var is present it wins. Exit 1 on empty input or if
+    the prompt is cancelled.
+    """
     import getpass
 
     try:
@@ -739,7 +841,11 @@ def auth_set():
 
 @auth_app.command("status")
 def auth_status():
-    """Show where the current API key is loaded from."""
+    """Report which source phasectl would load the API key from.
+
+    Prints one of: 'key: from environment', 'key: configured (credentials
+    file)', or 'key: not set'. Does not validate the key against the API.
+    """
     src = key_source()
     if src == "environment":
         print("key: from environment")
