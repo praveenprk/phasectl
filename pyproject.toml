@@ -5,17 +5,43 @@ build-backend = "hatchling.build"
 [project]
 name = "phasectl"
 version = "0.1.0"
-description = "Personal Claude dev orchestration — phase-gated engineering sessions"
+description = "Cognitive-mode manager for engineering sessions — phase-gated LLM chat with local sessions, provider-agnostic backends, and MCP tool discovery."
+readme = "README.md"
 requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Praveen Kumar" },
+]
+keywords = ["cli", "llm", "mcp", "anthropic", "openai", "ollama", "sessions", "engineering"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
 dependencies = [
     "typer>=0.12.0",
     "anthropic>=0.34.0",
+    "httpx>=0.27.0",
     "tomli-w>=1.0.0",
     "networkx>=3.0",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+
+[project.urls]
+Homepage = "https://github.com/praveenprk/phasectl"
+Repository = "https://github.com/praveenprk/phasectl"
+Issues = "https://github.com/praveenprk/phasectl/issues"
 
 [project.scripts]
 phasectl = "phasectl.cli:app"
