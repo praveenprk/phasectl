@@ -36,7 +36,7 @@ from .loose import (
     synthesize_top_line as loose_synthesize_top_line,
 )
 from .seed import build_seed_block
-from .auth import AuthError, key_source, save_api_key
+from .auth import AuthError, key_source, save_api_key, remove_api_key
 
 
 app = typer.Typer(
@@ -52,7 +52,11 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 auth_app = typer.Typer(
-    help="Manage the Anthropic API key (env or ~/.config/phasectl/credentials).",
+    help=(
+        "Manage the LLM API key. Sources checked in order: $PHASECTL_API_KEY "
+        "or $ANTHROPIC_API_KEY, then the system keychain (macOS Keychain / "
+        "freedesktop secret-service), then ~/.config/phasectl/credentials."
+    ),
     no_args_is_help=True,
 )
 app.add_typer(auth_app, name="auth")
@@ -735,7 +739,7 @@ def check(
         if src == "not set":
             _add("auth", False, "no key configured (run: phasectl auth set)")
         else:
-            _add("auth", True, f"{src} (set)")
+            _add("auth", True, f"from {src}")
     except Exception as e:
         _add("auth", False, f"error: {e}")
 
@@ -824,16 +828,21 @@ def check(
 
 @auth_app.command("set")
 def auth_set():
-    """Read an Anthropic API key from a hidden prompt and store it at ~/.config/phasectl/credentials (chmod 600).
+    """Read an API key from a hidden prompt and store it in the best-available backend.
 
-    The credentials file is consulted only when $ANTHROPIC_API_KEY is
-    unset; if the env var is present it wins. Exit 1 on empty input or if
-    the prompt is cancelled.
+    Storage preference (first available wins):
+      1. macOS Keychain (via `security add-generic-password`)
+      2. freedesktop secret-service on Linux (via `secret-tool store`)
+      3. ~/.config/phasectl/credentials (chmod 600) — headless fallback
+
+    An env var ($PHASECTL_API_KEY or $ANTHROPIC_API_KEY) still overrides
+    stored keys at read time. Exit 1 on empty input or if the prompt is
+    cancelled.
     """
     import getpass
 
     try:
-        key = getpass.getpass("Anthropic API key: ").strip()
+        key = getpass.getpass("API key: ").strip()
     except (EOFError, KeyboardInterrupt):
         print("", file=sys.stderr)
         raise typer.Exit(1)
@@ -842,24 +851,39 @@ def auth_set():
         print("phasectl: no key entered.", file=sys.stderr)
         raise typer.Exit(1)
 
-    path = save_api_key(key)
-    print(f"key stored at {path}")
+    where = save_api_key(key)
+    if where in ("macOS Keychain", "freedesktop secret-service"):
+        print(f"key stored in {where}")
+    else:
+        print(f"key stored at {where}")
 
 
 @auth_app.command("status")
 def auth_status():
     """Report which source phasectl would load the API key from.
 
-    Prints one of: 'key: from environment', 'key: configured (credentials
-    file)', or 'key: not set'. Does not validate the key against the API.
+    Does not validate the key against the API.
     """
     src = key_source()
-    if src == "environment":
-        print("key: from environment")
-    elif src == "credentials file":
-        print("key: configured (credentials file)")
-    else:
+    if src == "not set":
         print("key: not set")
+    else:
+        print(f"key: from {src}")
+
+
+@auth_app.command("remove")
+def auth_remove():
+    """Delete the API key from every backend that has it.
+
+    Removes from macOS Keychain, freedesktop secret-service, and the
+    credentials file (whichever are present). Env vars are not touched.
+    Exit 0 whether or not anything was removed.
+    """
+    where = remove_api_key()
+    if where == "not set":
+        print("key: nothing to remove")
+    else:
+        print(f"key removed from {where}")
 
 
 if __name__ == "__main__":
