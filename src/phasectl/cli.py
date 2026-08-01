@@ -523,16 +523,16 @@ def status(
 def index(
     project: str = typer.Option("contextos", "--project", "-p", help="Project name to store the index_path under, in config.toml."),
     path: str = typer.Option(None, "--path", help="Absolute or relative path to the project root. If omitted, the previously stored path for --project is reused."),
+    tool: str = typer.Option(None, "--tool", help="MCP tool to invoke for indexing. Defaults to the first discovered tool whose name contains 'index'."),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress the 'Indexing …' diagnostic on stderr."),
 ):
     """Index a project so 'phasectl query' and the impl/validate tools can find its symbols.
 
-    Requires 'jcodemunch-mcp' on PATH; it is invoked over stdio to perform
-    the indexing. The resolved absolute path is written to config.toml at
-    [projects.<name>].index_path so subsequent runs can be spelled just
-    'phasectl index --project <name>' (or, when <name> matches the
-    default_project, plain 'phasectl index'). First-time indexing requires
-    --path. Exit 1 on missing path, unknown project, or indexer error.
+    Delegates to the configured MCP server (default: 'jcodemunch-mcp
+    serve'). The tool used for indexing is discovered at runtime — the
+    first tool whose name contains 'index' — unless --tool names one
+    explicitly. The resolved absolute path is written to config.toml at
+    [projects.<name>].index_path.
     """
     if path is None:
         stored = get_index_path(project)
@@ -549,11 +549,31 @@ def index(
         raise typer.Exit(1)
 
     abs_path = os.path.abspath(path)
+    config = _load_config()
     _diag(f"Indexing {abs_path} as {project}...", quiet=quiet)
 
     tool_executor = ToolExecutor(project=project)
     try:
-        result = tool_executor.execute("index_project", {"path": abs_path})
+        discovered = tool_executor.discovered_tools(config)
+        if not discovered:
+            print("no tools discovered from MCP server", file=sys.stderr)
+            raise typer.Exit(1)
+
+        tool_name = tool
+        if not tool_name:
+            for t in discovered:
+                if "index" in (t.get("name") or "").lower():
+                    tool_name = t["name"]
+                    break
+        if not tool_name:
+            names = ", ".join(t.get("name", "") for t in discovered)
+            print(
+                f"no indexing tool discovered on MCP server. Pass --tool NAME. Available: {names}",
+                file=sys.stderr,
+            )
+            raise typer.Exit(1)
+
+        result = tool_executor.execute(tool_name, {"path": abs_path}, config=config)
     finally:
         tool_executor.close()
 
@@ -567,25 +587,64 @@ def index(
 
 @app.command()
 def query(
-    symbol: str = typer.Argument(..., help="Symbol name or pattern to search for (matched by the indexer's search_symbols action)."),
+    symbol: str = typer.Argument(..., help="Symbol name or pattern to search for."),
     project: str = typer.Option("contextos", "--project", "-p", help="Project name whose stored index_path holds the index to search."),
+    tool: str = typer.Option(None, "--tool", help="MCP tool to invoke. Defaults to the first discovered tool whose name contains 'search'; if none but a dispatcher-style 'order' tool is present, wraps into `order(action=\"search_symbols\", args={...})`."),
+    repo: str = typer.Option(None, "--repo", help="Repo identifier to pass to the MCP tool (e.g. 'owner/name'). Falls back to [projects.<name>].repo in config.toml; auto-derived from the git remote if absent."),
     json_flag: bool = typer.Option(False, "--json", help="Print the indexer's raw JSON result instead of one match per line."),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Reserved; query output goes to stdout unchanged."),
 ):
-    """Search the indexed symbols of a project. Standalone — no session needed.
+    """Search the indexed symbols of a project via a discovered MCP tool.
 
     Requires a prior 'phasectl index --project <name> --path <dir>'.
-    Exit 4 if the project has no stored index or the indexer reports an
-    error.
+    Exit 4 if the project has no stored index or if no suitable search
+    tool can be found (pass --tool to override).
     """
     index_path = get_index_path(project)
     if not index_path:
         print(f"no index for {project}. run: phasectl index --project {project} --path <path>", file=sys.stderr)
         raise typer.Exit(4)
 
+    config = _load_config()
+    resolved_repo = repo or _resolve_project_repo(project, config, str(index_path))
+
     tool_executor = ToolExecutor(project=project)
     try:
-        result = tool_executor.execute("search_symbols", {"query": symbol})
+        discovered = tool_executor.discovered_tools(config)
+        if not discovered:
+            print("no tools discovered from MCP server", file=sys.stderr)
+            raise typer.Exit(4)
+        names = {t.get("name") for t in discovered}
+
+        if tool:
+            tool_name = tool
+            args: dict = {"query": symbol}
+            if resolved_repo:
+                args["repo"] = resolved_repo
+        else:
+            tool_name = next(
+                (t["name"] for t in discovered if "search" in (t.get("name") or "").lower()),
+                None,
+            )
+            if tool_name:
+                args = {"query": symbol}
+                if resolved_repo:
+                    args["repo"] = resolved_repo
+            elif "order" in names:
+                tool_name = "order"
+                inner: dict = {"query": symbol}
+                if resolved_repo:
+                    inner["repo"] = resolved_repo
+                args = {"action": "search_symbols", "args": inner}
+            else:
+                available = ", ".join(sorted(n for n in names if n))
+                print(
+                    f"no search tool discovered. Pass --tool NAME. Available: {available}",
+                    file=sys.stderr,
+                )
+                raise typer.Exit(4)
+
+        result = tool_executor.execute(tool_name, args, config=config)
     finally:
         tool_executor.close()
 
@@ -599,6 +658,41 @@ def query(
         for line in result.strip().split("\n"):
             if line.strip():
                 print(line)
+
+
+def _resolve_project_repo(project: str, config: dict, index_path: str) -> str:
+    """Return the repo identifier for a project.
+
+    Order: [projects.<name>].repo → git remote of index_path (owner/name).
+    Empty string if unresolved.
+    """
+    projects = config.get("projects") or {}
+    stored = (projects.get(project) or {}).get("repo", "")
+    if stored:
+        return stored
+    if not index_path:
+        return ""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git", "-C", index_path, "remote", "get-url", "origin"],
+            capture_output=True, text=True, check=False, timeout=3,
+        )
+        url = result.stdout.strip()
+        if not url:
+            return ""
+        # https://github.com/owner/repo.git or git@github.com:owner/repo.git
+        if url.endswith(".git"):
+            url = url[:-4]
+        if "github.com" in url:
+            _, _, rest = url.partition("github.com")
+            rest = rest.lstrip(":/").strip()
+            if rest.count("/") >= 1:
+                parts = rest.split("/")
+                return "/".join(parts[-2:])
+    except Exception:
+        pass
+    return ""
 
 
 @app.command()
@@ -802,14 +896,17 @@ def check(
     except Exception as e:
         _add("index", False, f"error: {e}")
 
-    # mcp — spawn jcodemunch-mcp and complete the handshake
+    # mcp — spawn the configured MCP server and list its tools
     try:
+        import shlex
         from .mcp_client import MCPClient
-        with MCPClient(["jcodemunch-mcp", "serve"]):
-            pass
-        _add("mcp", True, "jcodemunch-mcp reachable (serve handshake ok)")
+        raw_cmd = (config.get("tools") or {}).get("mcp_command", "") or "jcodemunch-mcp serve"
+        cmd = shlex.split(raw_cmd)
+        with MCPClient(cmd) as mc:
+            tools = mc.list_tools()
+        _add("mcp", True, f"{cmd[0]} reachable ({len(tools)} tools discovered)")
     except Exception as e:
-        _add("mcp", False, f"jcodemunch-mcp unreachable: {e}")
+        _add("mcp", False, f"MCP server unreachable: {e}")
 
     # git — prefer the indexed repo, fall back to cwd
     try:
