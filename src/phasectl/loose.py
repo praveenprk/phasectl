@@ -243,18 +243,33 @@ def resolve_repo(
     return None
 
 
-def collect(repo: str, base: str = "main") -> dict:
+def collect(repo: str, base: str = "main", progress=None) -> dict:
+    def _step(msg: str) -> None:
+        if progress is not None:
+            progress.step(msg)
+
+    _step("resolving base branch...")
     resolved_base = resolve_base(repo, base)
     current = get_current_branch(repo)
+    _step("scanning uncommitted changes...")
+    uncommitted = get_uncommitted(repo)
+    _step("scanning branches...")
+    unmerged = get_unmerged_branches(repo, resolved_base) if resolved_base else []
+    _step("scanning stashes...")
+    stashes = get_stashes(repo)
+    _step("scanning unpushed commits...")
+    unpushed = get_unpushed(repo)
+    _step("scanning worktrees...")
+    worktrees = get_worktrees(repo)
     return {
         "repo": repo,
         "current_branch": current,
         "base": resolved_base,
-        "uncommitted": get_uncommitted(repo),
-        "unmerged": get_unmerged_branches(repo, resolved_base) if resolved_base else [],
-        "stashes": get_stashes(repo),
-        "unpushed": get_unpushed(repo),
-        "worktrees": get_worktrees(repo),
+        "uncommitted": uncommitted,
+        "unmerged": unmerged,
+        "stashes": stashes,
+        "unpushed": unpushed,
+        "worktrees": worktrees,
     }
 
 
