@@ -227,15 +227,15 @@ def extract_last_context(jsonl_path: str, max_chars: int = 4000) -> str:
 
 _SYNTHESIS_PROMPT = (
     "You produce a RESUME-HERE briefing for an engineer returning to work. "
-    "Fuse: git working state, the last session summary, and the last Claude Code context. "
-    "Output, in order: "
+    "Fuse: git working state, the last session summary, and the last "
+    "external coding-agent transcript context. Output, in order: "
     "(1) 2-4 line 'Resume here:' — the precise last checkpoint, what they were "
     "mid-way through, and the exact next step. "
     "(2) 'State:' one line each for branch, uncommitted changes, last commit, "
     "current blocker. "
-    "Prefer the newest concrete signal (uncommitted diff and CC context are newer "
-    "than the last closed session). Be specific with symbol/file/line when present. "
-    "No preamble, no padding."
+    "Prefer the newest concrete signal (uncommitted diff and coding-agent "
+    "transcript context are newer than the last closed session). Be specific "
+    "with symbol/file/line when present. No preamble, no padding."
 )
 
 
@@ -276,7 +276,7 @@ def build_resume_block(
     if session_summary and session_summary.strip():
         sections.append(f"## Last phasectl session summary\n{session_summary.strip()}")
     if cc_context and cc_context.strip():
-        sections.append(f"## Last Claude Code context (tail)\n{cc_context.strip()}")
+        sections.append(f"## Last coding-agent context (tail)\n{cc_context.strip()}")
 
     if not sections:
         return ""
