@@ -77,7 +77,9 @@ def _load_config() -> dict:
     if not config_file.exists():
         config_file.parent.mkdir(parents=True, exist_ok=True)
         config_file.write_text(
-            '[api]\n'
+            '[provider]\n'
+            'backend = "anthropic"\n'
+            'api_base = ""\n'
             'model = "claude-sonnet-4-6"\n'
             'compression_model = "claude-haiku-4-5-20251001"\n\n'
             '[storage]\n'
@@ -88,7 +90,20 @@ def _load_config() -> dict:
             'project = "contextos"\n'
         )
     with open(config_file, "rb") as f:
-        return tomllib.load(f)
+        config = tomllib.load(f)
+
+    # Auto-migrate the legacy [api] section into [provider] (in-memory only).
+    if "provider" not in config and "api" in config:
+        api = config["api"]
+        config["provider"] = {
+            "backend": "anthropic",
+            "api_base": api.get("api_base", ""),
+            "model": api.get("model", "claude-sonnet-4-6"),
+            "compression_model": api.get(
+                "compression_model", "claude-haiku-4-5-20251001"
+            ),
+        }
+    return config
 
 
 def _get_store(config: dict) -> SQLiteStore:

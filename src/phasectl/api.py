@@ -1,31 +1,7 @@
-from typing import NotRequired, TypedDict
-
-from anthropic import Anthropic, AuthenticationError
-from anthropic import NOT_GIVEN
-
-from .auth import InvalidAPIKey, NoAPIKey, get_api_key
+from .provider import DEFAULT_COMPRESS_PROMPT, get_provider
 from .tools import ToolExecutor, get_phase_tools
 from .graph import GraphStore
 from .config import get_graph_path
-
-
-_client: Anthropic | None = None
-
-
-def _get_client() -> Anthropic:
-    global _client
-    if _client is None:
-        api_key = get_api_key()
-        if not api_key:
-            raise NoAPIKey()
-        _client = Anthropic(api_key=api_key)
-    return _client
-
-
-class ToolResult(TypedDict):
-    type: str
-    tool_use_id: str
-    content: str
 
 
 def chat(
@@ -34,72 +10,47 @@ def chat(
     app_config: dict,
     project: str = "",
 ) -> str:
-    client = _get_client()
-    model = app_config["api"]["model"]
+    provider = get_provider(app_config)
+    tool_executor = ToolExecutor(project=project)
     tools = get_phase_tools(phase_config.name)
 
-    tool_executor = ToolExecutor(project=project)
-
-    while True:
-        try:
-            response = client.messages.create(
-                model=model,
+    try:
+        while True:
+            text, tool_calls = provider.chat(
                 system=phase_config.system_prompt,
                 messages=messages,
-                tools=tools if tools else NOT_GIVEN,
+                tools=tools if tools else None,
                 temperature=phase_config.temperature,
                 max_tokens=4096,
             )
-        except AuthenticationError:
-            raise InvalidAPIKey()
 
-        if response.stop_reason == "tool_use":
-            tool_results: list[ToolResult] = []
-            assistant_content = []
-
-            for block in response.content:
-                if block.type == "tool_use":
-                    result = tool_executor.execute(block.name, block.input)
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
+            if tool_calls:
+                messages.append({
+                    "role": "assistant",
+                    "content": text,
+                    "tool_calls": tool_calls,
+                })
+                for tc in tool_calls:
+                    result = tool_executor.execute(tc["name"], tc["arguments"])
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
                         "content": result,
                     })
-                assistant_content.append(block)
+                continue
 
-            messages.append({"role": "assistant", "content": assistant_content})
-            messages.append({"role": "user", "content": tool_results})
-            continue
-
-        text_parts = []
-        for block in response.content:
-            if block.type == "text":
-                text_parts.append(block.text)
-        return "\n".join(text_parts)
+            return text
+    finally:
+        tool_executor.close()
 
 
 def compress(turns_text: str, app_config: dict, system_prompt: str | None = None) -> str:
-    client = _get_client()
-    model = app_config["api"]["compression_model"]
-
-    if system_prompt is None:
-        system_prompt = (
-            "You are a session compression tool. "
-            "Compress the following conversation turns into a concise summary "
-            "preserving key decisions, open questions, and context."
-        )
-
-    try:
-        response = client.messages.create(
-            model=model,
-            system=system_prompt,
-            messages=[{"role": "user", "content": turns_text}],
-            temperature=0.3,
-            max_tokens=1024,
-        )
-    except AuthenticationError:
-        raise InvalidAPIKey()
-    return response.content[0].text
+    provider = get_provider(app_config)
+    return provider.compress(
+        system=system_prompt or DEFAULT_COMPRESS_PROMPT,
+        content=turns_text,
+        max_tokens=1024,
+    )
 
 
 def extract_rfcs_and_decisions(summary: str) -> tuple[list[str], list[str]]:
@@ -134,8 +85,8 @@ def persist_session_graph(
     store.close()
 
 
-def _get_graph_store(config: dict) -> GraphStore | None:
+def _get_graph_store(app_config: dict) -> GraphStore | None:
     try:
-        return GraphStore(str(get_graph_path(config)))
+        return GraphStore(str(get_graph_path(app_config)))
     except Exception:
         return None
