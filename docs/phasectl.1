@@ -37,6 +37,12 @@ is read-only against the user's codebase: it reads git state, indexed
 symbols, and transcripts, and writes only under
 .IR ~/.config/phasectl/ .
 No command creates, modifies, or deletes files under the project path.
+.PP
+.B phasectl
+runs entirely in userspace: no root, no system services, no open ports, no
+background processes. The only network traffic is outbound HTTPS to the
+configured LLM endpoint (or localhost for Ollama). Credentials are kept in
+the system keychain or a chmod-600 file. No telemetry. Licensed under MIT.
 .SH COMMANDS
 .SS start
 .B phasectl start
