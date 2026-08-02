@@ -1133,49 +1133,60 @@ def check(
       mcp     — jcodemunch-mcp is reachable and completes the handshake
       git     — the indexed repo (or cwd) is a git working tree
 
-    Every check catches its own errors; a failing one prints ✗ with a
-    reason and the command still runs the rest. Exit 0 if all pass, 1 if
-    any fail.
+    Each row is one of:
+      ✓  configured and working
+      —  not configured yet (a setup step the user hasn't taken)
+      ✗  broken (a configured subsystem that failed)
+
+    Exit 0 unless a ✗ appears. Every check catches its own errors and
+    the command still runs the rest.
     """
     config = _load_config()
     project = project or config.get("defaults", {}).get("project", "") or ""
 
-    results: list[tuple[str, bool, str]] = []
+    # status: "ok" | "unconfigured" | "fail"
+    results: list[tuple[str, str, str]] = []
 
-    def _add(name: str, ok: bool, msg: str) -> None:
-        results.append((name, ok, msg))
+    def _ok(name: str, msg: str) -> None:
+        results.append((name, "ok", msg))
+
+    def _unconfigured(name: str, msg: str) -> None:
+        results.append((name, "unconfigured", msg))
+
+    def _fail(name: str, msg: str) -> None:
+        results.append((name, "fail", msg))
 
     # config
     try:
         cf = get_config_file()
         if cf.exists():
-            _add("config", True, str(cf).replace(str(os.path.expanduser("~")), "~"))
+            _ok("config", str(cf).replace(str(os.path.expanduser("~")), "~"))
         else:
-            _add("config", False, f"missing: {cf}")
+            _unconfigured("config", f"missing: {cf}")
     except Exception as e:
-        _add("config", False, f"error: {e}")
+        _fail("config", f"error: {e}")
 
     # auth — presence only, no live API call. Keyless backends (ollama) skip.
     try:
         if _is_keyless(config):
-            _add("auth", True, f"not needed (backend={_backend_from_config(config)})")
+            _ok("auth", f"not needed (backend={_backend_from_config(config)})")
         else:
             src = key_source()
             if src == "not set":
-                _add("auth", False, "no key configured (run: phasectl auth set)")
+                _unconfigured("auth", "no key configured (run: phasectl auth set)")
             else:
-                _add("auth", True, f"from {src}")
+                _ok("auth", f"from {src}")
     except Exception as e:
-        _add("auth", False, f"error: {e}")
+        _fail("auth", f"error: {e}")
 
     # db
     try:
         db_path = str(get_db_path())
         store = SQLiteStore(db_path)
         n = store.conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
-        _add("db", True, f"{os.path.basename(db_path)} ({n} sessions)")
+        _ok("db", f"{os.path.basename(db_path)} ({n} sessions)")
     except Exception as e:
-        _add("db", False, f"error: {e}")
+        _fail("db", f"error: {e}")
 
     # phases
     try:
@@ -1188,29 +1199,29 @@ def check(
             except Exception:
                 pass
         if loaded:
-            _add("phases", True, f"{len(loaded)} phases loaded ({','.join(loaded)})")
+            _ok("phases", f"{len(loaded)} phases loaded ({','.join(loaded)})")
         else:
-            _add("phases", False, "no phases loadable")
+            _fail("phases", "no phases loadable")
     except Exception as e:
-        _add("phases", False, f"error: {e}")
+        _fail("phases", f"error: {e}")
 
     # index
     idx_path = None
     try:
         if not project:
-            _add("index", False, "no project (set defaults.project or pass --project)")
+            _unconfigured("index", "no project (set defaults.project or pass --project)")
         else:
             idx = get_index_path(project, config)
             if idx is None:
-                _add("index", False, f"'{project}' has no stored path (run: phasectl index --project {project} --path <dir>)")
+                _unconfigured("index", f"'{project}' has no stored path (run: phasectl index --project {project} --path <dir>)")
             elif not idx.exists():
-                _add("index", False, f"'{project}' path missing: {idx}")
+                _fail("index", f"'{project}' path missing: {idx}")
             else:
                 idx_path = str(idx)
                 display = str(idx).replace(str(os.path.expanduser("~")), "~")
-                _add("index", True, f"{project} → {display}")
+                _ok("index", f"{project} → {display}")
     except Exception as e:
-        _add("index", False, f"error: {e}")
+        _fail("index", f"error: {e}")
 
     # mcp — spawn the configured MCP server and list its tools
     try:
@@ -1220,9 +1231,9 @@ def check(
         cmd = shlex.split(raw_cmd)
         with MCPClient(cmd) as mc:
             tools = mc.list_tools()
-        _add("mcp", True, f"{cmd[0]} reachable ({len(tools)} tools discovered)")
+        _ok("mcp", f"{cmd[0]} reachable ({len(tools)} tools discovered)")
     except Exception as e:
-        _add("mcp", False, f"MCP server unreachable: {e}")
+        _fail("mcp", f"MCP server unreachable: {e}")
 
     # git — prefer the indexed repo, fall back to cwd
     try:
@@ -1231,26 +1242,31 @@ def check(
         if is_git_repo(repo):
             branch = get_current_branch(repo) or "detached"
             dirty = get_uncommitted(repo).get("count", 0)
-            _add("git", True, f"repo is git ({branch}, {dirty} dirty)")
+            _ok("git", f"repo is git ({branch}, {dirty} dirty)")
         else:
-            _add("git", False, f"not a git repo: {repo}")
+            _unconfigured("git", f"not a git repo: {repo}")
     except Exception as e:
-        _add("git", False, f"error: {e}")
+        _fail("git", f"error: {e}")
 
-    all_ok = all(ok for _, ok, _ in results)
+    any_fail = any(status == "fail" for _, status, _ in results)
+    all_ok = not any_fail
+
+    _MARKS = {"ok": "✓", "unconfigured": "—", "fail": "✗"}
 
     if json_flag:
         print(json.dumps({
             "ok": all_ok,
             "project": project or None,
-            "checks": [{"name": n, "ok": ok, "message": m} for n, ok, m in results],
+            "checks": [
+                {"name": n, "ok": status == "ok", "status": status, "message": m}
+                for n, status, m in results
+            ],
         }))
     else:
-        for name, ok, msg in results:
-            mark = "✓" if ok else "✗"
-            print(f"{(name + ':'):<10}  {mark} {msg}")
+        for name, status, msg in results:
+            print(f"{(name + ':'):<10}  {_MARKS[status]} {msg}")
 
-    if not all_ok:
+    if any_fail:
         raise typer.Exit(1)
 
 
