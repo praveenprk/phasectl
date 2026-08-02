@@ -202,10 +202,16 @@ top line (requires the API key); all other output is offline.
 [\fB--json\fR]
 .PP
 Smoke-test every subsystem: config, auth, db, phases, index, mcp, git.
-No LLM calls; no API key required. Each check catches its own errors and
-prints
-.B \(dg
-with a reason on failure. Exit 0 if all pass, 1 if any fail.
+No LLM calls; no API key required. Each row is one of:
+.B \(oq\(cq
+(configured and working),
+.B \(oq\(em\(cq
+(not configured yet \(em a setup step the user hasn't taken, e.g. no API
+key with a key-requiring backend, or no stored index path for the
+project), or
+.B \(oq\(dg\(cq
+(broken \(em a configured subsystem that failed, e.g. a corrupt DB or an
+unreachable MCP server). Exit 0 unless any row is broken.
 .SS auth set
 .B phasectl auth set
 .PP
