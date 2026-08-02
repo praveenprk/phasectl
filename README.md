@@ -182,8 +182,12 @@ db_path = ""              # empty = ~/.config/phasectl/sessions.db
 [graph]
 path = ""                 # empty = ~/.config/phasectl/graph.json
 
-[defaults]
-project = "myproject"     # used when a command omits --project
+# Optional. When a command omits --project, phasectl uses defaults.project
+# if set here; otherwise it infers the project from the current directory
+# (longest matching [projects.*].index_path, then the enclosing git repo's
+# basename). Add this only if you want to pin one project globally.
+# [defaults]
+# project = "myproject"
 
 [claude_code]
 projects_dir = ""         # override auto-detected coding-agent transcript dir
