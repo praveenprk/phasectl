@@ -219,6 +219,27 @@ credentials. `XDG_CONFIG_HOME` moves the whole config directory.
   symbols; all storage (sessions, config, graph) lives under
   `~/.config/phasectl/`. Your working tree is never touched.
 
+## Security & compliance
+
+phasectl runs entirely in userspace. It does not require root, does not install
+system services, does not modify system files, does not open network ports, does
+not run background processes, and does not access hardware.
+
+**Installs:** one binary in `~/.local/bin/`, config in `~/.config/phasectl/`.
+
+**Network:** outbound HTTPS to the configured LLM endpoint only. No inbound
+connections. Point at `localhost` (Ollama) for fully offline use.
+
+**Codebase:** read-only. phasectl never writes, modifies, or deletes files in
+your project directory. Git state is read via `git` subprocess calls.
+
+**Credentials:** stored in the system keychain (macOS Keychain / freedesktop
+secret-service) or a chmod-600 file. Environment variable override for CI.
+
+**No telemetry.** No analytics. No phone-home.
+
+**License:** MIT.
+
 ## Exit codes
 
 - `0`  ok
