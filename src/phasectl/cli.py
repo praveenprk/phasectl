@@ -1,3 +1,9 @@
+# INVARIANT: phasectl is read-only against the user's codebase.
+# It reads git state, reads indexed symbols, reads transcripts.
+# It writes ONLY to ~/.config/phasectl/ (config, sessions, graph).
+# No command may create, modify, or delete files under the project path.
+# This is a design constraint, not an implementation detail.
+
 import sys
 import json
 import shlex

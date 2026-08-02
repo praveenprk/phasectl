@@ -215,6 +215,9 @@ credentials. `XDG_CONFIG_HOME` moves the whole config directory.
   `--json` on the read commands is not decoration.
 - **Provider-agnostic.** No vendor lock-in in the code or the UX. Swap the
   backend or the indexer without touching phasectl.
+- **Never writes to your codebase.** phasectl reads git state and indexed
+  symbols; all storage (sessions, config, graph) lives under
+  `~/.config/phasectl/`. Your working tree is never touched.
 
 ## Exit codes
 

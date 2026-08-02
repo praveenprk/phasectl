@@ -31,6 +31,12 @@ The bundled phase prompts describe
 not domain knowledge. Any project-specific content belongs in a per-user
 override at
 .IR ~/.config/phasectl/phases/<name>.toml .
+.PP
+.B phasectl
+is read-only against the user's codebase: it reads git state, indexed
+symbols, and transcripts, and writes only under
+.IR ~/.config/phasectl/ .
+No command creates, modifies, or deletes files under the project path.
 .SH COMMANDS
 .SS start
 .B phasectl start
