@@ -137,6 +137,8 @@ def _die_on_auth_error(exc: AuthError) -> None:
 _DEFAULT_CONFIG_TEMPLATE = '''\
 [provider]
 # backend: anthropic | openai | ollama | openrouter | custom
+# Ollama is keyless (runs locally); the others require an API key via
+# `phasectl auth set`, $PHASECTL_API_KEY, or $ANTHROPIC_API_KEY.
 backend = "anthropic"
 
 # model names depend on your backend:
@@ -163,7 +165,37 @@ path = ""
 
 [defaults]
 project = "myproject"
+
+[claude_code]
+# Override the auto-detected coding-agent transcript dir (defaults to ~/.claude).
+projects_dir = ""
+
+[tools]
+# MCP-speaking indexer spawned for `phasectl index` and the impl/validate
+# tool loop. Swap the command to swap indexers.
+mcp_command = "jcodemunch-mcp serve"
+
+# Per-project index paths are written here by `phasectl index`:
+# [projects.myproject]
+# index_path = "/abs/path/to/myproject"
 '''
+
+
+_KEYLESS_BACKENDS = {"ollama"}
+
+
+def _backend_from_config(config: dict) -> str:
+    return (config.get("provider", {}) or {}).get("backend", "") or ""
+
+
+def _is_keyless(config: dict) -> bool:
+    return _backend_from_config(config) in _KEYLESS_BACKENDS
+
+
+def _resolve_project(project: str | None, config: dict, fallback: str = "myproject") -> str:
+    if project:
+        return project
+    return config.get("defaults", {}).get("project", "") or fallback
 
 
 def _load_config() -> dict:
@@ -237,7 +269,7 @@ def _derive_current_phase(store: SQLiteStore, session_data: dict) -> str:
 
 @app.command()
 def start(
-    project: str = typer.Option("contextos", "--project", "-p", help="Project name; scopes sessions, index path, and graph."),
+    project: str = typer.Option(None, "--project", "-p", help="Project name; scopes sessions, index path, and graph. Defaults to defaults.project from config."),
     phase: str = typer.Option("orient", "--phase", help="Phase to open in (orient|ideate|design|impl|validate|snapshot; user overrides in ~/.config/phasectl/phases also accepted)."),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress the diagnostic lines on stderr; the session id and any resume block still print on stdout."),
     no_fuse: bool = typer.Option(
@@ -262,6 +294,7 @@ def start(
     progress = Progress(quiet=quiet)
     progress.step("loading config...")
     config = _load_config()
+    project = _resolve_project(project, config)
     store = _get_store(config)
 
     active = store.get_active_session(project)
@@ -759,7 +792,7 @@ def _parse_symbol_count(stdout: str) -> str:
 
 @app.command()
 def index(
-    project: str = typer.Option("myproject", "--project", "-p", help="Project name to store the index_path under, in config.toml."),
+    project: str = typer.Option(None, "--project", "-p", help="Project name to store the index_path under, in config.toml. Defaults to defaults.project from config."),
     path: str = typer.Option(None, "--path", help="Absolute or relative path to the project root. If omitted, the previously stored path for --project is re-indexed."),
     register_only: bool = typer.Option(
         False, "--register-only",
@@ -779,6 +812,7 @@ def index(
     do their own indexing externally.
     """
     config = _load_config()
+    project = _resolve_project(project, config)
 
     if path is None:
         stored = get_index_path(project, config)
@@ -857,7 +891,7 @@ def index(
 @app.command()
 def query(
     symbol: str = typer.Argument(..., help="Symbol name or pattern to search for."),
-    project: str = typer.Option("contextos", "--project", "-p", help="Project name whose stored index_path holds the index to search."),
+    project: str = typer.Option(None, "--project", "-p", help="Project name whose stored index_path holds the index to search. Defaults to defaults.project from config."),
     tool: str = typer.Option(None, "--tool", help="MCP tool to invoke. Defaults to the first discovered tool whose name contains 'search'; if none but a dispatcher-style 'order' tool is present, wraps into `order(action=\"search_symbols\", args={...})`."),
     repo: str = typer.Option(None, "--repo", help="Repo identifier to pass to the MCP tool (e.g. 'owner/name'). Falls back to [projects.<name>].repo in config.toml; auto-derived from the git remote if absent."),
     json_flag: bool = typer.Option(False, "--json", help="Print the indexer's raw JSON result instead of one match per line."),
@@ -869,12 +903,12 @@ def query(
     Exit 4 if the project has no stored index or if no suitable search
     tool can be found (pass --tool to override).
     """
-    index_path = get_index_path(project)
+    config = _load_config()
+    project = _resolve_project(project, config)
+    index_path = get_index_path(project, config)
     if not index_path:
         print(f"no index for {project}. run: phasectl index --project {project} --path <path>", file=sys.stderr)
         raise typer.Exit(4)
-
-    config = _load_config()
     resolved_repo = repo or _resolve_project_repo(project, config, str(index_path))
 
     tool_executor = ToolExecutor(project=project)
@@ -966,7 +1000,7 @@ def _resolve_project_repo(project: str, config: dict, index_path: str) -> str:
 
 @app.command()
 def graph(
-    project: str = typer.Option("contextos", "--project", "-p", help="Project name to filter the graph on."),
+    project: str = typer.Option(None, "--project", "-p", help="Project name to filter the graph on. Defaults to defaults.project from config."),
     json_flag: bool = typer.Option(False, "--json", help="Emit the graph as a JSON {sessions: [...]} document."),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Reserved."),
 ):
@@ -982,6 +1016,7 @@ def graph(
     from .graph import GraphStore
 
     config = _load_config()
+    project = _resolve_project(project, config)
     graph_path = get_graph_path(config)
 
     if not os.path.exists(graph_path):
@@ -1120,13 +1155,16 @@ def check(
     except Exception as e:
         _add("config", False, f"error: {e}")
 
-    # auth — presence only, no live API call
+    # auth — presence only, no live API call. Keyless backends (ollama) skip.
     try:
-        src = key_source()
-        if src == "not set":
-            _add("auth", False, "no key configured (run: phasectl auth set)")
+        if _is_keyless(config):
+            _add("auth", True, f"not needed (backend={_backend_from_config(config)})")
         else:
-            _add("auth", True, f"from {src}")
+            src = key_source()
+            if src == "not set":
+                _add("auth", False, "no key configured (run: phasectl auth set)")
+            else:
+                _add("auth", True, f"from {src}")
     except Exception as e:
         _add("auth", False, f"error: {e}")
 
@@ -1254,8 +1292,11 @@ def auth_status():
 
     Does not validate the key against the API.
     """
+    config = _load_config()
     src = key_source()
-    if src == "not set":
+    if _is_keyless(config) and src == "not set":
+        print(f"key: not needed (backend={_backend_from_config(config)})")
+    elif src == "not set":
         print("key: not set")
     else:
         print(f"key: from {src}")

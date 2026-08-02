@@ -15,12 +15,17 @@ immediately.
 
 ## Tests
 
+There is no pytest suite yet — the tool's surface is exercised end-to-end
+by `phasectl check` against a real config. Before opening a PR, at
+minimum run:
+
 ```sh
-pytest
+phasectl check          # every subsystem: config, auth, db, phases, index, mcp, git
+phasectl loose          # smoke-tests the offline git walker
 ```
 
-The suite is intentionally minimal — most of the value is exercised by
-`phasectl check` against a real config.
+Contributions that add a `tests/` directory with pytest cases for pure
+functions (config, resume-block building, loose walker) are welcome.
 
 ## Add a phase
 
