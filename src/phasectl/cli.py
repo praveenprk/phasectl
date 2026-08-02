@@ -163,9 +163,6 @@ db_path = ""
 [graph]
 path = ""
 
-[defaults]
-project = "myproject"
-
 [claude_code]
 # Override the auto-detected coding-agent transcript dir (defaults to ~/.claude).
 projects_dir = ""
@@ -192,10 +189,74 @@ def _is_keyless(config: dict) -> bool:
     return _backend_from_config(config) in _KEYLESS_BACKENDS
 
 
-def _resolve_project(project: str | None, config: dict, fallback: str = "myproject") -> str:
+def _git_toplevel(path: str) -> str | None:
+    try:
+        r = subprocess.run(
+            ["git", "-C", path, "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, check=False, timeout=5,
+        )
+        if r.returncode == 0:
+            top = r.stdout.strip()
+            return top or None
+    except Exception:
+        pass
+    return None
+
+
+def _infer_project_from_cwd(config: dict) -> str | None:
+    """Infer a project name from cwd: longest matching [projects.*].index_path
+    wins; otherwise fall back to the git repo root's basename."""
+    try:
+        cwd = os.path.realpath(os.getcwd())
+    except Exception:
+        return None
+    projects = config.get("projects", {}) or {}
+    best: tuple[int, str] | None = None
+    for name, meta in projects.items():
+        if not isinstance(meta, dict):
+            continue
+        idx = meta.get("index_path", "") or ""
+        if not idx:
+            continue
+        try:
+            idx_abs = os.path.realpath(os.path.expanduser(idx))
+        except Exception:
+            continue
+        try:
+            common = os.path.commonpath([cwd, idx_abs])
+        except ValueError:
+            continue
+        if common == idx_abs:
+            n = len(idx_abs)
+            if best is None or n > best[0]:
+                best = (n, name)
+    if best:
+        return best[1]
+    root = _git_toplevel(cwd)
+    if root:
+        return os.path.basename(root)
+    return None
+
+
+def _resolve_project(project: str | None, config: dict) -> str:
+    """Return an explicit project name, or exit 1 if none can be determined.
+
+    Order: --project → defaults.project → cwd inference (matching
+    [projects.*].index_path or the enclosing git repo's basename).
+    """
     if project:
         return project
-    return config.get("defaults", {}).get("project", "") or fallback
+    default = (config.get("defaults", {}) or {}).get("project", "") or ""
+    if default:
+        return default
+    inferred = _infer_project_from_cwd(config)
+    if inferred:
+        return inferred
+    print(
+        "no project specified. Pass --project <name> or run from inside a project directory.",
+        file=sys.stderr,
+    )
+    raise typer.Exit(1)
 
 
 def _load_config() -> dict:
@@ -467,7 +528,7 @@ def chat(
     progress.step("loading config...")
     config = _load_config()
     store = _get_store(config)
-    project = config["defaults"]["project"]
+    project = _resolve_project(None, config)
 
     session_data = store.get_active_session(project)
     if not session_data:
@@ -575,7 +636,7 @@ def switch(
     """
     config = _load_config()
     store = _get_store(config)
-    project = config["defaults"]["project"]
+    project = _resolve_project(None, config)
 
     session_data = store.get_active_session(project)
     if not session_data:
@@ -620,7 +681,7 @@ def close(
     progress.step("loading config...")
     config = _load_config()
     store = _get_store(config)
-    project = config["defaults"]["project"]
+    project = _resolve_project(None, config)
 
     session_data = store.get_active_session(project)
     if not session_data:
@@ -683,7 +744,7 @@ def status(
     """
     config = _load_config()
     store = _get_store(config)
-    project = config["defaults"]["project"]
+    project = _resolve_project(None, config)
 
     session_data = store.get_active_session(project)
     if session_data:
@@ -1068,7 +1129,11 @@ def loose(
     progress = Progress(quiet=quiet)
     progress.step("loading config...")
     config = _load_config()
-    active_project = config.get("defaults", {}).get("project", "")
+    active_project = (
+        (config.get("defaults", {}) or {}).get("project", "")
+        or _infer_project_from_cwd(config)
+        or ""
+    )
 
     repo = loose_resolve_repo(path, project, active_project, config)
     if not repo:
@@ -1142,7 +1207,9 @@ def check(
     the command still runs the rest.
     """
     config = _load_config()
-    project = project or config.get("defaults", {}).get("project", "") or ""
+    if not project:
+        default = (config.get("defaults", {}) or {}).get("project", "") or ""
+        project = default or _infer_project_from_cwd(config) or ""
 
     # status: "ok" | "unconfigured" | "fail"
     results: list[tuple[str, str, str]] = []
@@ -1209,7 +1276,7 @@ def check(
     idx_path = None
     try:
         if not project:
-            _unconfigured("index", "no project (set defaults.project or pass --project)")
+            _unconfigured("index", "no project (run from a project dir or pass --project)")
         else:
             idx = get_index_path(project, config)
             if idx is None:
