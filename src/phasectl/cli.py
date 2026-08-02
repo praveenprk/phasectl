@@ -100,6 +100,14 @@ auth_app = typer.Typer(
 app.add_typer(auth_app, name="auth")
 
 
+def _version_callback(value: bool) -> None:
+    if not value:
+        return
+    from . import __version__
+    print(f"phasectl {__version__}")
+    raise typer.Exit(0)
+
+
 @app.callback()
 def main(
     model: str = typer.Option(
@@ -113,6 +121,11 @@ def main(
     api_base: str = typer.Option(
         None, "--api-base",
         help="Override the API base URL for this invocation. Wins over config.toml.",
+    ),
+    version: bool = typer.Option(
+        None, "--version", "-v", "-V",
+        callback=_version_callback, is_eager=True,
+        help="Show the phasectl version and exit.",
     ),
 ):
     """phasectl — cognitive-mode manager for engineering sessions."""
