@@ -16,6 +16,9 @@ uv tool install phasectl
 phasectl auth set                     # or export PHASECTL_API_KEY / ANTHROPIC_API_KEY
 ```
 
+Using a local model via **Ollama**? Skip `phasectl auth set` — Ollama is
+keyless. See [Swap providers](#swap-providers) for the two-line config change.
+
 Optional — install a code indexer if you want `phasectl index/query` and the
 `impl`/`validate` tool loop:
 
@@ -88,13 +91,17 @@ model = "gpt-4o"
 compression_model = "gpt-4o-mini"
 ```
 
-**Ollama** (local):
+**Ollama** (local, keyless — no `phasectl auth set` needed):
 ```toml
 [provider]
 backend = "ollama"
 model = "llama3.1:70b"
 compression_model = "llama3.1:8b"
 ```
+
+With `backend = "ollama"`, `phasectl auth status` reports
+`not needed (backend=ollama)` and `phasectl check` treats the auth row as
+passing without any key.
 
 **OpenRouter** (many models behind one key):
 ```toml
@@ -132,8 +139,10 @@ Any MCP-speaking indexer with a similar tool surface works. Known-compatible:
 
 Each phase is a TOML file with `name`, `temperature`, `token_budget`,
 `tools_allowed`, and a `system_prompt`. The bundled defaults describe
-*posture* (how to think in this mode), not project specifics. Override any
-of them by dropping a file at `~/.config/phasectl/phases/<name>.toml`.
+*posture* (how to think in this mode), not project specifics. Override a
+bundled phase — or add a new one — by dropping a file at
+`~/.config/phasectl/phases/<name>.toml`. A file whose `[phase].name` is
+not in the bundled set becomes a new phase (`phasectl start --phase <name>`).
 
 | phase      | temp | budget | posture                                                                             |
 |------------|-----:|-------:|-------------------------------------------------------------------------------------|
