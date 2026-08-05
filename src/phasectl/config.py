@@ -38,10 +38,10 @@ def get_graph_path(config: dict | None = None) -> Path:
 get_kuzu_path = get_graph_path
 
 
-def get_claude_code_projects_dir(config: dict | None = None) -> str:
+def get_coding_agent_projects_dir(config: dict | None = None) -> str:
     if config is None:
         config = _load_config()
-    return config.get("claude_code", {}).get("projects_dir", "") or ""
+    return config.get("coding_agent", {}).get("projects_dir", "") or ""
 
 
 def get_index_path(project: str, config: dict | None = None) -> Path | None:
