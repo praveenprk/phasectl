@@ -27,12 +27,12 @@ from .config import (
     get_db_path,
     get_index_path,
     set_index_path,
-    get_claude_code_projects_dir,
+    get_coding_agent_projects_dir,
 )
 from .tools import ToolExecutor
 from .resume import (
     get_git_state,
-    find_claude_code_session,
+    find_agent_session,
     extract_last_context,
     build_resume_block,
 )
@@ -182,8 +182,11 @@ db_path = ""
 [graph]
 path = ""
 
-[claude_code]
-# Override the auto-detected coding-agent transcript dir (defaults to ~/.claude).
+[coding_agent]
+# Override the auto-detected coding-agent transcript dir. When set, phasectl
+# scans only this dir; otherwise it scans all known agent locations
+# (~/.claude, ~/.codex, ~/.cursor, ~/.continue). Env var
+# PHASECTL_AGENT_DIR overrides both.
 projects_dir = ""
 
 [tools]
@@ -413,7 +416,7 @@ def start(
         repo_path_obj = get_index_path(project, config)
         repo_path = str(repo_path_obj) if repo_path_obj else ""
         git_state: dict = {}
-        cc_context = ""
+        agent_context = ""
         if repo_path:
             try:
                 git_state = get_git_state(repo_path)
@@ -423,11 +426,11 @@ def start(
             except Exception as e:
                 _diag(f"[orient] git introspection skipped: {e}", quiet=quiet)
             try:
-                cc_dir = get_claude_code_projects_dir(config)
-                cc_path = find_claude_code_session(repo_path, cc_dir)
-                if cc_path:
+                agent_dir = get_coding_agent_projects_dir(config)
+                agent_path = find_agent_session(repo_path, agent_dir)
+                if agent_path:
                     progress.step("reading coding-agent transcript...")
-                    cc_context = extract_last_context(cc_path)
+                    agent_context = extract_last_context(agent_path)
             except Exception as e:
                 _diag(f"[orient] coding-agent transcript lookup skipped: {e}", quiet=quiet)
         else:
@@ -440,7 +443,7 @@ def start(
             progress.step(
                 f"synthesizing resume block via {_compression_label(config)}..."
             )
-            resume_block = build_resume_block(git_state, session_summary, cc_context, config)
+            resume_block = build_resume_block(git_state, session_summary, agent_context, config)
         except Exception as e:
             _diag(f"[orient] synthesis failed: {e}", quiet=quiet)
             resume_block = ""

@@ -65,31 +65,35 @@ def get_git_state(repo_path: str) -> dict:
     return state
 
 
-def _candidate_projects_dirs() -> list[Path]:
-    env = os.environ.get("CLAUDE_CONFIG_DIR")
-    candidates: list[Path] = []
-    if env:
-        candidates.append(Path(env) / "projects")
-    candidates.append(Path.home() / ".claude" / "projects")
-    candidates.append(Path.home() / ".config" / "claude" / "projects")
-    return candidates
+KNOWN_AGENT_DIRS: list[str] = [
+    "~/.claude/projects",
+    "~/.codex/sessions",
+    "~/.cursor/sessions",
+    "~/.continue/sessions",
+]
 
 
-def _resolve_projects_dir(configured: str = "") -> Path | None:
+def _roots_to_scan(configured: str = "") -> list[Path]:
+    env = os.environ.get("PHASECTL_AGENT_DIR")
     if configured:
         p = Path(os.path.expanduser(configured))
-        return p if p.is_dir() else None
-    for p in _candidate_projects_dirs():
+        return [p] if p.is_dir() else []
+    if env:
+        p = Path(os.path.expanduser(env))
+        return [p] if p.is_dir() else []
+    roots: list[Path] = []
+    for raw in KNOWN_AGENT_DIRS:
+        p = Path(os.path.expanduser(raw))
         if p.is_dir():
-            return p
-    return None
+            roots.append(p)
+    return roots
 
 
-def find_claude_code_session(repo_path: str, projects_dir: str = "") -> str | None:
+def find_agent_session(repo_path: str, projects_dir: str = "") -> str | None:
     if not repo_path:
         return None
-    root = _resolve_projects_dir(projects_dir)
-    if root is None:
+    roots = _roots_to_scan(projects_dir)
+    if not roots:
         return None
 
     abs_repo = os.path.realpath(repo_path)
@@ -97,30 +101,35 @@ def find_claude_code_session(repo_path: str, projects_dir: str = "") -> str | No
     slug_dash_lead = "-" + abs_repo.lstrip("/").replace("/", "-")
     basename = os.path.basename(abs_repo.rstrip("/"))
 
-    matches: list[Path] = []
-    for sub in root.iterdir():
-        if not sub.is_dir():
+    best: tuple[float, Path] | None = None
+    for root in roots:
+        try:
+            subs = list(root.iterdir())
+        except OSError:
             continue
-        name = sub.name
-        if name == slug_dash or name == slug_dash_lead:
-            matches.append(sub)
-        elif basename and basename in name:
-            matches.append(sub)
+        for sub in subs:
+            if not sub.is_dir():
+                continue
+            name = sub.name
+            if not (
+                name == slug_dash
+                or name == slug_dash_lead
+                or (basename and basename in name)
+            ):
+                continue
+            try:
+                jsonls = list(sub.glob("*.jsonl"))
+            except OSError:
+                continue
+            for jf in jsonls:
+                try:
+                    mtime = jf.stat().st_mtime
+                except OSError:
+                    continue
+                if best is None or mtime > best[0]:
+                    best = (mtime, jf)
 
-    if not matches:
-        return None
-
-    matches.sort(key=lambda p: (p.name != slug_dash_lead, p.name != slug_dash))
-    target = matches[0]
-
-    jsonls = sorted(
-        target.glob("*.jsonl"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    if not jsonls:
-        return None
-    return str(jsonls[0])
+    return str(best[1]) if best else None
 
 
 def _extract_text_from_content(content) -> str:
@@ -266,7 +275,7 @@ def _format_git_for_prompt(git: dict) -> str:
 def build_resume_block(
     git: dict,
     session_summary: str,
-    cc_context: str,
+    agent_context: str,
     app_config: dict,
 ) -> str:
     sections: list[str] = []
@@ -275,8 +284,8 @@ def build_resume_block(
         sections.append(git_block)
     if session_summary and session_summary.strip():
         sections.append(f"## Last phasectl session summary\n{session_summary.strip()}")
-    if cc_context and cc_context.strip():
-        sections.append(f"## Last coding-agent context (tail)\n{cc_context.strip()}")
+    if agent_context and agent_context.strip():
+        sections.append(f"## Last coding-agent context (tail)\n{agent_context.strip()}")
 
     if not sections:
         return ""
