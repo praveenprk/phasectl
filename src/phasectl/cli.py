@@ -831,10 +831,47 @@ def _indexer_binary_from_config(config: dict) -> str:
 
 
 def _run_index(binary: str, path: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
+    """Invoke `<binary> index <path>`, falling back to `init` on first run.
+
+    Verified against CodeGraph (the default indexer): `index` rebuilds an
+    already-initialized project but exits 1 with "not initialized" on a
+    fresh one, where `init` builds the graph from scratch in one step.
+    Binaries without that two-step distinction just succeed on the first
+    `index` call and never hit the fallback.
+    """
+    proc = subprocess.run(
         [binary, "index", path],
         capture_output=True, text=True, timeout=120,
     )
+    if proc.returncode != 0 and "not initialized" in (proc.stderr or "").lower():
+        proc = subprocess.run(
+            [binary, "init", path],
+            capture_output=True, text=True, timeout=120,
+        )
+    return proc
+
+
+def _summarize_index(binary: str, path: str, stdout: str) -> str:
+    """Best-effort human summary of an index run.
+
+    Tries `<binary> status <path> --json` first (CodeGraph's own summary
+    of the index it just built); falls back to parsing the index
+    command's own stdout for binaries without a status subcommand.
+    """
+    try:
+        status_proc = subprocess.run(
+            [binary, "status", path, "--json"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if status_proc.returncode == 0:
+            data = json.loads(status_proc.stdout)
+            files = data.get("fileCount")
+            nodes = data.get("nodeCount")
+            if isinstance(nodes, int) and isinstance(files, int):
+                return f"indexed: {nodes} nodes across {files} files"
+    except (subprocess.TimeoutExpired, OSError, ValueError, TypeError):
+        pass
+    return _parse_symbol_count(stdout)
 
 
 def _parse_symbol_count(stdout: str) -> str:
@@ -966,7 +1003,7 @@ def index(
             print(f"{binary} index failed: {hint or proc.returncode}", file=sys.stderr)
         raise typer.Exit(1)
 
-    summary = _parse_symbol_count(proc.stdout)
+    summary = _summarize_index(binary, abs_path, proc.stdout)
     progress.step("storing index path in config...")
     set_index_path(project, abs_path)
     progress.done()
@@ -977,16 +1014,15 @@ def index(
 def query(
     symbol: str = typer.Argument(..., help="Symbol name or pattern to search for."),
     project: str = typer.Option(None, "--project", "-p", help="Project name whose stored index_path holds the index to search. Defaults to defaults.project from config."),
-    repo: str = typer.Option(None, "--repo", help="Repo identifier to pass to the indexer (e.g. 'owner/name'). Falls back to [projects.<name>].repo in config.toml; auto-derived from the git remote if absent."),
     json_flag: bool = typer.Option(False, "--json", help="Print the indexer's raw JSON result instead of one match per line."),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Reserved; query output goes to stdout unchanged."),
 ):
     """Search the indexed symbols of a project via the configured indexer binary.
 
     Requires a prior 'phasectl index --project <name> --path <dir>'. Shells
-    out to `<indexer> query <symbol>` directly — no MCP, no protocol
-    handshake. Exit 4 if the project has no stored index or the indexer
-    binary isn't reachable.
+    out to `<indexer> query <symbol> --path <index_path>` directly — no
+    MCP, no protocol handshake. Exit 4 if the project has no stored index
+    or the indexer binary isn't reachable.
     """
     config = _load_config()
     project = _resolve_project(project, config)
@@ -994,12 +1030,11 @@ def query(
     if not index_path:
         print(f"no index for {project}. run: phasectl index --project {project} --path <path>", file=sys.stderr)
         raise typer.Exit(4)
-    resolved_repo = repo or _resolve_project_repo(project, config, str(index_path))
 
     tool_executor = ToolExecutor(project=project)
     args: dict = {"query": symbol}
-    if resolved_repo:
-        args["repo"] = resolved_repo
+    if json_flag:
+        args["json"] = True
     result = tool_executor.execute("search_symbols", args, config=config)
 
     if result.startswith("[indexer"):
@@ -1012,41 +1047,6 @@ def query(
         for line in result.strip().split("\n"):
             if line.strip():
                 print(line)
-
-
-def _resolve_project_repo(project: str, config: dict, index_path: str) -> str:
-    """Return the repo identifier for a project.
-
-    Order: [projects.<name>].repo → git remote of index_path (owner/name).
-    Empty string if unresolved.
-    """
-    projects = config.get("projects") or {}
-    stored = (projects.get(project) or {}).get("repo", "")
-    if stored:
-        return stored
-    if not index_path:
-        return ""
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["git", "-C", index_path, "remote", "get-url", "origin"],
-            capture_output=True, text=True, check=False, timeout=3,
-        )
-        url = result.stdout.strip()
-        if not url:
-            return ""
-        # https://github.com/owner/repo.git or git@github.com:owner/repo.git
-        if url.endswith(".git"):
-            url = url[:-4]
-        if "github.com" in url:
-            _, _, rest = url.partition("github.com")
-            rest = rest.lstrip(":/").strip()
-            if rest.count("/") >= 1:
-                parts = rest.split("/")
-                return "/".join(parts[-2:])
-    except Exception:
-        pass
-    return ""
 
 
 @app.command()

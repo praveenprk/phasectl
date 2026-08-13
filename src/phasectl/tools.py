@@ -2,8 +2,12 @@
 
 phasectl shells out directly to the configured indexer binary — no MCP,
 no JSON-RPC handshake, no dynamic tool discovery. There is exactly one
-tool, `search_symbols`, which runs `<indexer> query <term>` as a
-subprocess and returns its stdout verbatim.
+tool, `search_symbols`, which runs `<indexer> query <term> --path
+<index_path>` as a subprocess and returns its stdout verbatim. Verified
+against the default indexer, CodeGraph (github.com/colbymchenry/codegraph):
+`codegraph query <search> [--path <dir>] [--json]` — no `--repo`-style
+scoping, and `--path` is required to target a project from outside its
+directory, which is the common case for phasectl.
 
     [tools]
     indexer_command = "codegraph"   # default; change to swap indexers
@@ -14,7 +18,6 @@ from __future__ import annotations
 import shlex
 import shutil
 import subprocess
-from typing import Any
 
 
 _DEFAULT_INDEXER_COMMAND = "codegraph"
@@ -51,6 +54,13 @@ class ToolExecutor:
             return shlex.split(self._indexer_command_override)
         return _indexer_command(config or {})
 
+    def _project_index_path(self, config: dict | None = None) -> str | None:
+        if not self.project:
+            return None
+        from .config import get_index_path
+        path = get_index_path(self.project, config or {})
+        return str(path) if path else None
+
     def discovered_tools(self, config: dict | None = None) -> list[dict]:
         """Return the single fixed tool, if the indexer binary is on PATH."""
         command = self._resolved_command(config)
@@ -72,8 +82,12 @@ class ToolExecutor:
 
         args = arguments or {}
         argv = [*command, "query", str(args.get("query", ""))]
-        if args.get("repo"):
-            argv += ["--repo", str(args["repo"])]
+
+        index_path = self._project_index_path(config)
+        if index_path:
+            argv += ["--path", index_path]
+        if args.get("json"):
+            argv.append("--json")
 
         try:
             proc = subprocess.run(argv, capture_output=True, text=True, timeout=15)
