@@ -21,10 +21,11 @@ Using a local model via **Ollama**? Skip `phasectl auth set` — Ollama is
 keyless. See [Swap providers](#swap-providers) for the two-line config change.
 
 Optional — install a code indexer if you want `phasectl index/query` and the
-`impl`/`validate` tool loop:
+`impl`/`validate` tool loop. The default indexer is
+[CodeGraph](https://github.com/colbymchenry/codegraph) (npm package):
 
 ```sh
-uv tool install codegraph              # or any binary on PATH with index/query subcommands
+npm i -g @colbymchenry/codegraph      # or any binary on PATH with index/query subcommands
 ```
 
 phasectl shells out to the indexer binary directly — `<binary> index <path>`
@@ -32,25 +33,43 @@ and `<binary> query <term>` — no MCP, no server, no protocol handshake. The
 default indexer binary is configured in `[tools].indexer_command` (see
 [Swap code indexers](#swap-code-indexers)).
 
-## Quick start
+## Quick start (5 minutes)
 
 ```sh
-phasectl auth set
-phasectl index --project myproject --path .
-phasectl check --project myproject
+# one-time setup
+uv tool install phasectl
+npm i -g @colbymchenry/codegraph
+phasectl auth set                                 # skip if using Ollama
 
+# per-project
+phasectl index --project myproject --path .        # builds the CodeGraph index
+phasectl check --project myproject                  # confirm every subsystem is green
+
+# a session
 phasectl start  --project myproject --phase orient
 phasectl chat   "where are we?"
 phasectl switch --phase impl
-phasectl chat   "show me the main entry point"
+phasectl chat   "use search_symbols to find the main entry point"
+phasectl switch --phase validate
+phasectl chat   "use search_symbols to check how that function is called"
 phasectl close
 
+# standalone, no LLM call
+phasectl query SYMBOL --project myproject
 phasectl loose  --project myproject
 ```
 
 `phasectl check` reports pass/fail for every subsystem before you spend a
-turn on the API. `phasectl loose` runs standalone and lists every
-uncommitted, unmerged, or unpushed thread in the repo.
+turn on the API — its `indexer` row confirms the configured binary (CodeGraph
+by default) is on `PATH`. In `impl`/`validate`, `phasectl chat` lets the model
+call `search_symbols`, which shells straight out to that binary — you'll see
+`[tool call] search_symbols(...)` on stderr as it happens. `phasectl loose`
+runs standalone and lists every uncommitted, unmerged, or unpushed thread in
+the repo.
+
+Re-running `phasectl index` on an already-indexed project (no `--path`)
+re-indexes the stored path; there's nothing else to run to keep it current
+by hand.
 
 ## Commands
 
@@ -134,7 +153,10 @@ indexer_command = "codegraph"   # default; change to swap indexers
 Any binary that supports `index <path>` and `query <term>` subcommands
 works. Known-compatible:
 
-- **CodeGraph** — the default indexer binary.
+- [CodeGraph](https://github.com/colbymchenry/codegraph) — the default
+  indexer binary (`npm i -g @colbymchenry/codegraph`). First index on a
+  project calls `init` under the hood if the project hasn't been indexed
+  before; later runs call `index` directly.
 - Any indexer that indexes externally: use
   `phasectl index --project <name> --path <dir> --register-only` to record the
   path without invoking the binary.
