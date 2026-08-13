@@ -5,9 +5,10 @@ under a named phase (`orient`, `ideate`, `design`, `impl`, `validate`,
 `snapshot`) with its own system prompt, temperature, and token budget.
 
 phasectl is provider-agnostic (Anthropic, OpenAI, Ollama, OpenRouter, or any
-OpenAI-compatible endpoint) and indexer-agnostic (any MCP server on `PATH`).
-Turns live in SQLite; closed sessions are summarised and linked in a local
-graph. No daemons, no server, no vendor lock-in.
+OpenAI-compatible endpoint) and indexer-agnostic (any binary on `PATH` that
+speaks `index`/`query`). Turns live in SQLite; closed sessions are
+summarised and linked in a local graph. No daemons, no server, no vendor
+lock-in.
 
 ## Install
 
@@ -23,11 +24,13 @@ Optional — install a code indexer if you want `phasectl index/query` and the
 `impl`/`validate` tool loop:
 
 ```sh
-uv tool install jcodemunch-mcp        # or any MCP-speaking indexer on PATH
+uv tool install codegraph              # or any binary on PATH with index/query subcommands
 ```
 
-Any MCP server that exposes symbol-search tools works; the default indexer
-binary is configured in `[tools].mcp_command` (see [Swap code indexers](#swap-code-indexers)).
+phasectl shells out to the indexer binary directly — `<binary> index <path>`
+and `<binary> query <term>` — no MCP, no server, no protocol handshake. The
+default indexer binary is configured in `[tools].indexer_command` (see
+[Swap code indexers](#swap-code-indexers)).
 
 ## Quick start
 
@@ -54,7 +57,7 @@ uncommitted, unmerged, or unpushed thread in the repo.
 | command               | what it does                                                                 |
 |-----------------------|------------------------------------------------------------------------------|
 | `phasectl start`      | Open a new session; in `orient` fuses git state + last session + last coding-agent transcript (e.g. Claude Code) into a `Resume here:` block. |
-| `phasectl chat MSG`   | Send a message under the current phase's prompt. Reads stdin as context when piped. Compresses old turns when the budget is exceeded. In `impl`/`validate` the model can call MCP tools. |
+| `phasectl chat MSG`   | Send a message under the current phase's prompt. Reads stdin as context when piped. Compresses old turns when the budget is exceeded. In `impl`/`validate` the model can call the search_symbols tool, backed directly by the indexer binary. |
 | `phasectl switch`     | Change the active session's phase. Prior turns remain visible.               |
 | `phasectl close`      | Summarise the session using the `snapshot` prompt; link any `RFC-<n>` / `DECISION-<n>` tokens into the graph. |
 | `phasectl status`     | Print the active session's phase, tokens, and turn count. `--json`.          |
@@ -62,7 +65,7 @@ uncommitted, unmerged, or unpushed thread in the repo.
 | `phasectl query SYM`  | Search the indexed symbols of a project. Standalone. `--json`.               |
 | `phasectl graph`      | List closed sessions with linked RFCs and DECISIONs. `--json`.               |
 | `phasectl loose`      | List every loose thread in a git repo — uncommitted files, unmerged branches, stashes, unpushed commits, extra worktrees. `--path`, `--base`, `--json`, `--synthesize`. |
-| `phasectl check`      | Smoke-test every subsystem: config, auth, db, phases, index, mcp, git. No LLM calls. `--json`. |
+| `phasectl check`      | Smoke-test every subsystem: config, auth, db, phases, index, indexer, git. No LLM calls. `--json`. |
 | `phasectl auth set`   | Prompt for an API key and store it in the system keychain (macOS/Linux) or `~/.config/phasectl/credentials` (chmod 600). |
 | `phasectl auth status`| Report which source phasectl would load the key from.                        |
 
@@ -119,19 +122,20 @@ phasectl --model gpt-4o-mini chat "quick question"
 
 ## Swap code indexers
 
-phasectl spawns whatever MCP server you name and uses the tools it discovers
-via `tools/list` — no hardcoded schemas.
+phasectl runs the configured binary as a plain subprocess — `<binary> index
+<path>` for `phasectl index`, `<binary> query <term>` for `phasectl query`
+and the impl/validate tool loop. No MCP, no server, no protocol handshake.
 
 ```toml
 [tools]
-mcp_command = "jcodemunch-mcp serve"   # default; change to swap indexers
+indexer_command = "codegraph"   # default; change to swap indexers
 ```
 
-Any MCP-speaking indexer with a similar tool surface works. Known-compatible:
+Any binary that supports `index <path>` and `query <term>` subcommands
+works. Known-compatible:
 
-- [jcodemunch-mcp](https://pypi.org/project/jcodemunch-mcp/) — the default,
-  ships an `index` subcommand for `phasectl index`.
-- Any MCP server that indexes externally: use
+- **CodeGraph** — the default indexer binary.
+- Any indexer that indexes externally: use
   `phasectl index --project <name> --path <dir> --register-only` to record the
   path without invoking the binary.
 
@@ -193,7 +197,7 @@ path = ""                 # empty = ~/.config/phasectl/graph.json
 projects_dir = ""         # override auto-detected coding-agent transcript dir
 
 [tools]
-mcp_command = "jcodemunch-mcp serve"
+indexer_command = "codegraph"
 
 [projects.myproject]
 index_path = "/abs/path/to/myproject"   # written by 'phasectl index'
