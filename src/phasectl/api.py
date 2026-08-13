@@ -14,7 +14,7 @@ def chat(
 ) -> tuple[str, int]:
     """Run the chat loop; returns (final_text, num_tools_available).
 
-    `on_tool_call(name, arguments)` fires immediately before each MCP
+    `on_tool_call(name, arguments)` fires immediately before each indexer
     tool invocation. `on_round(index)` fires before each provider call
     (index starts at 0 for the first request).
     """

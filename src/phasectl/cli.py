@@ -89,8 +89,8 @@ app = typer.Typer(
         "Each session runs under a named phase (orient, ideate, design, impl, "
         "validate, snapshot) with its own system prompt, temperature, and token "
         "budget. Turns are stored in SQLite; closed sessions are summarised and "
-        "linked in a local graph. Symbol lookup is delegated to an MCP-speaking "
-        "code indexer configured in tools.mcp_command in config.toml."
+        "linked in a local graph. Symbol lookup shells out directly to the "
+        "indexer binary configured in tools.indexer_command in config.toml."
     ),
     epilog="Run 'phasectl COMMAND --help' for details on any command.",
     no_args_is_help=True,
@@ -190,9 +190,10 @@ path = ""
 projects_dir = ""
 
 [tools]
-# MCP-speaking indexer spawned for `phasectl index` and the impl/validate
-# tool loop. Swap the command to swap indexers.
-mcp_command = "jcodemunch-mcp serve"
+# Indexer binary invoked directly (no MCP, no protocol) for `phasectl index`,
+# `phasectl query`, and the impl/validate tool loop. Swap the command to
+# swap indexers.
+indexer_command = "codegraph"
 
 # Per-project index paths are written here by `phasectl index`:
 # [projects.myproject]
@@ -515,9 +516,9 @@ def chat(
     Uses the current phase's system prompt, temperature, and token budget.
     If the running token estimate exceeds the phase budget, older turns are
     compressed into a summary before the request. In the impl and validate
-    phases the model can call code-lookup tools discovered from the
-    configured MCP server; the tool loop runs until the model produces a
-    plain text reply.
+    phases the model can call the search_symbols tool, which shells out to
+    the configured indexer binary directly; the tool loop runs until the
+    model produces a plain text reply.
 
     Exit codes: 3 if no session is active, 2 for other API errors,
     1 or 2 for auth errors (see 'phasectl auth --help').
@@ -821,19 +822,56 @@ def status(
                 print("No active session.")
 
 
-def _mcp_binary_from_config(config: dict) -> str:
-    raw = ((config.get("tools") or {}).get("mcp_command") or "").strip()
+def _indexer_binary_from_config(config: dict) -> str:
+    raw = ((config.get("tools") or {}).get("indexer_command") or "").strip()
     if not raw:
-        raw = "jcodemunch-mcp serve"
+        raw = "codegraph"
     tokens = shlex.split(raw)
     return tokens[0] if tokens else ""
 
 
 def _run_index(binary: str, path: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
+    """Invoke `<binary> index <path>`, falling back to `init` on first run.
+
+    Verified against CodeGraph (the default indexer): `index` rebuilds an
+    already-initialized project but exits 1 with "not initialized" on a
+    fresh one, where `init` builds the graph from scratch in one step.
+    Binaries without that two-step distinction just succeed on the first
+    `index` call and never hit the fallback.
+    """
+    proc = subprocess.run(
         [binary, "index", path],
         capture_output=True, text=True, timeout=120,
     )
+    if proc.returncode != 0 and "not initialized" in (proc.stderr or "").lower():
+        proc = subprocess.run(
+            [binary, "init", path],
+            capture_output=True, text=True, timeout=120,
+        )
+    return proc
+
+
+def _summarize_index(binary: str, path: str, stdout: str) -> str:
+    """Best-effort human summary of an index run.
+
+    Tries `<binary> status <path> --json` first (CodeGraph's own summary
+    of the index it just built); falls back to parsing the index
+    command's own stdout for binaries without a status subcommand.
+    """
+    try:
+        status_proc = subprocess.run(
+            [binary, "status", path, "--json"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if status_proc.returncode == 0:
+            data = json.loads(status_proc.stdout)
+            files = data.get("fileCount")
+            nodes = data.get("nodeCount")
+            if isinstance(nodes, int) and isinstance(files, int):
+                return f"indexed: {nodes} nodes across {files} files"
+    except (subprocess.TimeoutExpired, OSError, ValueError, TypeError):
+        pass
+    return _parse_symbol_count(stdout)
 
 
 def _parse_symbol_count(stdout: str) -> str:
@@ -879,20 +917,21 @@ def index(
     path: str = typer.Option(None, "--path", help="Absolute or relative path to the project root. If omitted, the previously stored path for --project is re-indexed."),
     register_only: bool = typer.Option(
         False, "--register-only",
-        help="Store the path in config without invoking any indexer. For MCP servers that handle indexing externally.",
+        help="Store the path in config without invoking any indexer. For indexers that handle indexing externally.",
     ),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress the 'Indexing …' diagnostic on stderr."),
 ):
     """Index a project so 'phasectl query' and the impl/validate tools can find its symbols.
 
-    Resolves the indexer binary from tools.mcp_command in config.toml
-    (first token, e.g. 'jcodemunch-mcp' from 'jcodemunch-mcp serve') and
-    invokes `<binary> index <abs_path>` as a subprocess. The resolved
-    path is written to config.toml at projects.<name>.index_path.
+    Resolves the indexer binary from tools.indexer_command in config.toml
+    (first token, e.g. 'codegraph' from 'codegraph') and invokes
+    `<binary> index <abs_path>` as a plain subprocess — no MCP, no
+    protocol handshake. The resolved path is written to config.toml at
+    projects.<name>.index_path.
 
     If --path is omitted and the project already has a stored path,
-    that path is re-indexed. Use --register-only for MCP servers that
-    do their own indexing externally.
+    that path is re-indexed. Use --register-only for indexers that do
+    their own indexing externally.
     """
     config = _load_config()
     project = _resolve_project(project, config)
@@ -918,10 +957,10 @@ def index(
         print(f"registered: {project} → {abs_path}")
         return
 
-    binary = _mcp_binary_from_config(config)
+    binary = _indexer_binary_from_config(config)
     if not binary:
         print(
-            "no MCP indexer binary configured. Set [tools].mcp_command in config.toml "
+            "no indexer binary configured. Set [tools].indexer_command in config.toml "
             "or pass --register-only to store the path without indexing.",
             file=sys.stderr,
         )
@@ -964,7 +1003,7 @@ def index(
             print(f"{binary} index failed: {hint or proc.returncode}", file=sys.stderr)
         raise typer.Exit(1)
 
-    summary = _parse_symbol_count(proc.stdout)
+    summary = _summarize_index(binary, abs_path, proc.stdout)
     progress.step("storing index path in config...")
     set_index_path(project, abs_path)
     progress.done()
@@ -975,16 +1014,15 @@ def index(
 def query(
     symbol: str = typer.Argument(..., help="Symbol name or pattern to search for."),
     project: str = typer.Option(None, "--project", "-p", help="Project name whose stored index_path holds the index to search. Defaults to defaults.project from config."),
-    tool: str = typer.Option(None, "--tool", help="MCP tool to invoke. Defaults to the first discovered tool whose name contains 'search'; if none but a dispatcher-style 'order' tool is present, wraps into `order(action=\"search_symbols\", args={...})`."),
-    repo: str = typer.Option(None, "--repo", help="Repo identifier to pass to the MCP tool (e.g. 'owner/name'). Falls back to [projects.<name>].repo in config.toml; auto-derived from the git remote if absent."),
     json_flag: bool = typer.Option(False, "--json", help="Print the indexer's raw JSON result instead of one match per line."),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Reserved; query output goes to stdout unchanged."),
 ):
-    """Search the indexed symbols of a project via a discovered MCP tool.
+    """Search the indexed symbols of a project via the configured indexer binary.
 
-    Requires a prior 'phasectl index --project <name> --path <dir>'.
-    Exit 4 if the project has no stored index or if no suitable search
-    tool can be found (pass --tool to override).
+    Requires a prior 'phasectl index --project <name> --path <dir>'. Shells
+    out to `<indexer> query <symbol> --path <index_path>` directly — no
+    MCP, no protocol handshake. Exit 4 if the project has no stored index
+    or the indexer binary isn't reachable.
     """
     config = _load_config()
     project = _resolve_project(project, config)
@@ -992,49 +1030,14 @@ def query(
     if not index_path:
         print(f"no index for {project}. run: phasectl index --project {project} --path <path>", file=sys.stderr)
         raise typer.Exit(4)
-    resolved_repo = repo or _resolve_project_repo(project, config, str(index_path))
 
     tool_executor = ToolExecutor(project=project)
-    try:
-        discovered = tool_executor.discovered_tools(config)
-        if not discovered:
-            print("no tools discovered from MCP server", file=sys.stderr)
-            raise typer.Exit(4)
-        names = {t.get("name") for t in discovered}
+    args: dict = {"query": symbol}
+    if json_flag:
+        args["json"] = True
+    result = tool_executor.execute("search_symbols", args, config=config)
 
-        if tool:
-            tool_name = tool
-            args: dict = {"query": symbol}
-            if resolved_repo:
-                args["repo"] = resolved_repo
-        else:
-            tool_name = next(
-                (t["name"] for t in discovered if "search" in (t.get("name") or "").lower()),
-                None,
-            )
-            if tool_name:
-                args = {"query": symbol}
-                if resolved_repo:
-                    args["repo"] = resolved_repo
-            elif "order" in names:
-                tool_name = "order"
-                inner: dict = {"query": symbol}
-                if resolved_repo:
-                    inner["repo"] = resolved_repo
-                args = {"action": "search_symbols", "args": inner}
-            else:
-                available = ", ".join(sorted(n for n in names if n))
-                print(
-                    f"no search tool discovered. Pass --tool NAME. Available: {available}",
-                    file=sys.stderr,
-                )
-                raise typer.Exit(4)
-
-        result = tool_executor.execute(tool_name, args, config=config)
-    finally:
-        tool_executor.close()
-
-    if "ERROR" in result:
+    if result.startswith("[indexer"):
         print(result, file=sys.stderr)
         raise typer.Exit(4)
 
@@ -1044,41 +1047,6 @@ def query(
         for line in result.strip().split("\n"):
             if line.strip():
                 print(line)
-
-
-def _resolve_project_repo(project: str, config: dict, index_path: str) -> str:
-    """Return the repo identifier for a project.
-
-    Order: [projects.<name>].repo → git remote of index_path (owner/name).
-    Empty string if unresolved.
-    """
-    projects = config.get("projects") or {}
-    stored = (projects.get(project) or {}).get("repo", "")
-    if stored:
-        return stored
-    if not index_path:
-        return ""
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["git", "-C", index_path, "remote", "get-url", "origin"],
-            capture_output=True, text=True, check=False, timeout=3,
-        )
-        url = result.stdout.strip()
-        if not url:
-            return ""
-        # https://github.com/owner/repo.git or git@github.com:owner/repo.git
-        if url.endswith(".git"):
-            url = url[:-4]
-        if "github.com" in url:
-            _, _, rest = url.partition("github.com")
-            rest = rest.lstrip(":/").strip()
-            if rest.count("/") >= 1:
-                parts = rest.split("/")
-                return "/".join(parts[-2:])
-    except Exception:
-        pass
-    return ""
 
 
 @app.command()
@@ -1217,7 +1185,7 @@ def check(
       db      — sessions.db opens; count of sessions
       phases  — every phase TOML loads (bundled + user overrides)
       index   — the project has a stored index_path and it exists
-      mcp     — jcodemunch-mcp is reachable and completes the handshake
+      indexer — the configured indexer binary is found on PATH
       git     — the indexed repo (or cwd) is a git working tree
 
     Each row is one of:
@@ -1312,17 +1280,18 @@ def check(
     except Exception as e:
         _fail("index", f"error: {e}")
 
-    # mcp — spawn the configured MCP server and list its tools
+    # indexer — the configured indexer binary is found on PATH
     try:
-        import shlex
-        from .mcp_client import MCPClient
-        raw_cmd = (config.get("tools") or {}).get("mcp_command", "") or "jcodemunch-mcp serve"
+        import shutil
+        raw_cmd = (config.get("tools") or {}).get("indexer_command", "") or "codegraph"
         cmd = shlex.split(raw_cmd)
-        with MCPClient(cmd) as mc:
-            tools = mc.list_tools()
-        _ok("mcp", f"{cmd[0]} reachable ({len(tools)} tools discovered)")
+        binary_path = shutil.which(cmd[0]) if cmd else None
+        if binary_path:
+            _ok("indexer", f"{cmd[0]} found on PATH ({binary_path})")
+        else:
+            _unconfigured("indexer", f"{cmd[0]} not found on PATH (install it or set [tools].indexer_command)")
     except Exception as e:
-        _fail("mcp", f"MCP server unreachable: {e}")
+        _fail("indexer", f"error: {e}")
 
     # git — prefer the indexed repo, fall back to cwd
     try:
