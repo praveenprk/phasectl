@@ -1,8 +1,8 @@
 // Native C++ code indexer — CLI skeleton (M1, docs/internal/NATIVE_INDEXER_PLAN.md).
 //
 // Speaks the plain-subprocess contract phasectl already expects from CodeGraph:
-//   indexer index <path>
-//   indexer query <search> [--path <dir>] [--json] [--limit N] [--kind K]
+//   phasedex index <path>
+//   phasedex query <search> [--path <dir>] [--json] [--limit N] [--kind K]
 //
 // M4 adds symbol extraction for one source language (C++, self-hosted
 // dogfooding — see extract_cpp.hpp): `index` extracts symbols from
@@ -49,9 +49,9 @@
 namespace {
 
 void usage(std::ostream& out) {
-    out << "usage: indexer index <path>\n"
-        << "       indexer query <search> [--path <dir>] [--json] [--limit N] [--kind K]\n"
-        << "       indexer status <path> [--json]\n";
+    out << "usage: phasedex index <path>\n"
+        << "       phasedex query <search> [--path <dir>] [--json] [--limit N] [--kind K]\n"
+        << "       phasedex status <path> [--json]\n";
 }
 
 struct QueryOptions {
@@ -202,7 +202,7 @@ int run_query(const std::vector<std::string>& args) {
     std::error_code ec;
     if (!std::filesystem::exists(db_path, ec)) {
         std::cerr << "error: no index for " << root.string() << " — run "
-                   << "'indexer index " << root.string() << "' first\n";
+                   << "'phasedex index " << root.string() << "' first\n";
         return 1;
     }
 

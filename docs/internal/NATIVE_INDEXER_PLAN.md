@@ -128,8 +128,30 @@ commit, so this file is always an honest snapshot of what's actually done.
       recognized). Pulled the comment-stripping/brace-matching/
       trailing-identifier helpers C++ and JS both need into
       `lang_common.hpp` rather than forking them a second time.
-- [ ] **M8 — Packaging.** Static binary build (macOS + Linux), Homebrew
+- [x] **M8 — Packaging.** Static binary build (macOS + Linux), Homebrew
       formula. This is what makes `brew install <name>` real.
+
+      Binary/project name settled: **phasedex** (see "Resolved decisions").
+      Renamed the CMake project/target and `kBinaryName` from the
+      placeholder "indexer" — the XDG cache path is now
+      `$XDG_CACHE_HOME/phasedex/<project-key>/index.db`.
+
+      "Static binary" scoped down to what the plan actually needs, not
+      literal 100%-static-including-libc (documented directly in
+      CMakeLists.txt): statically links libstdc++/libgcc on Linux so the
+      binary doesn't need a matching runtime pre-installed, dynamically
+      links libsqlite3 (ships with macOS, near-universal on Linux) since
+      neither OS makes a fully static executable practical or, on macOS,
+      even possible for system libraries. `install(TARGETS ...)` added
+      so `cmake --install` (and the Homebrew formula's `std_cmake_args`)
+      work.
+
+      Homebrew formula at `indexer/packaging/homebrew/phasedex.rb` —
+      HEAD-only for now (no tap repo, no release tag yet), builds off
+      this branch directly: `brew install --HEAD --build-from-source
+      indexer/packaging/homebrew/phasedex.rb`. Retarget to `main` and
+      eventually a tagged `url`/`sha256` once M9 lands and this branch
+      merges.
 - [ ] **M9 — Swap the default.** Once this binary has real feature parity
       with CodeGraph for the query patterns phasectl actually exercises
       (see the live walkthrough in PR #2's description), flip
@@ -154,6 +176,9 @@ commit, so this file is always an honest snapshot of what's actually done.
   literal rather than aspirational, unlike CodeGraph's `.codegraph/`
   convention which does write into the project tree. Settled — M3
   implements this, doesn't re-litigate it.
+- **Binary/project name: `phasedex`.** Chosen at M8 (had to be, before
+  packaging could name a formula/binary/cache directory). Ties it to
+  phasectl by name without implying it's a phasectl submodule.
 - **`<project-key>` derivation: hashed, not path-mirrored.** FNV-1a
   (64-bit, hex-encoded) over the canonicalized absolute project path —
   see `indexer/src/cache_path.hpp`. Avoids reproducing the project's full
@@ -173,7 +198,6 @@ pre-decide them here:
   skews differently. (Reminder: this is about what source code the
   indexer *parses*, not what the indexer is *written in* — the binary is
   C++ throughout, that part isn't in question.)
-- **Binary/project name**: not yet chosen. Needs one before M8 packaging.
 
 ## Workflow for picking this up
 

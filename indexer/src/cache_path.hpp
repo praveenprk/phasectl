@@ -7,9 +7,8 @@
 // ~/Library/Caches special-casing — matches phasectl's own ~/.config
 // convention).
 //
-// `<binary-name>` is "indexer" for now; the plan's own "Open questions"
-// notes the real binary/project name isn't chosen yet (needed before M8
-// packaging). Rename this one constant when that's settled.
+// `<binary-name>` is "phasedex" (settled at M8 — see "Resolved decisions"
+// in the plan).
 
 #pragma once
 
@@ -20,7 +19,7 @@
 
 namespace indexer {
 
-inline constexpr const char* kBinaryName = "indexer";
+inline constexpr const char* kBinaryName = "phasedex";
 
 // FNV-1a, 64-bit. Not cryptographic — just a stable, dependency-free way to
 // turn an absolute project path into a short directory-safe key. Stable
