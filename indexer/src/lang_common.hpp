@@ -8,12 +8,24 @@
 #pragma once
 
 #include <cctype>
+#include <cstddef>
 #include <stack>
 #include <string>
 #include <unordered_map>
 
 namespace indexer {
 namespace detail {
+
+// Lines longer than this are skipped by every extractor before they ever
+// reach std::regex — found the hard way indexing a real-world project
+// whose (correctly ignorable, but not yet ignored at the time) vendored
+// venv/ contained generated single-line files tens of thousands of
+// characters long: libc++'s regex engine threw std::regex_error
+// ("complexity... exceeded a pre-set level") and crashed the whole
+// `index` run. No real hand-written source line is anywhere close to
+// this long; only generated/minified/data blobs are, and those were
+// never going to produce a meaningful symbol anyway.
+inline constexpr std::size_t kMaxExtractableLineLength = 4000;
 
 // Blanks out `//` and `/* */` comments, preserving newlines and overall
 // character offsets so line numbers computed later stay accurate. C-style

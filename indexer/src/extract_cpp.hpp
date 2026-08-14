@@ -65,6 +65,12 @@ inline std::vector<Symbol> extract_cpp_symbols(const std::string& file_path,
                                       : cleaned.substr(pos, nl - pos);
         ++line_no;
 
+        if (line.size() > detail::kMaxExtractableLineLength) {
+            if (nl == std::string::npos) break;
+            pos = nl + 1;
+            continue;
+        }
+
         std::smatch m;
         if (std::regex_match(line, m, class_re)) {
             Symbol s;

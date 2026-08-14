@@ -87,6 +87,8 @@ inline std::vector<Symbol> extract_python_symbols(const std::string& file_path,
         }
         last_code_line = line_no;
 
+        if (raw_line.size() > detail::kMaxExtractableLineLength) continue;
+
         std::smatch m;
         if (std::regex_search(raw_line, m, class_re)) {
             const std::string qualifier =

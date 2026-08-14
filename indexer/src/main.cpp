@@ -126,17 +126,28 @@ int run_index(const std::vector<std::string>& args) {
         const std::string file_path = ec ? file.string() : abs.string();
         const std::string content = buf.str();
 
-        std::vector<indexer::Symbol> extracted;
-        if (is_cpp) {
-            extracted = indexer::extract_cpp_symbols(file_path, content);
-        } else if (is_python) {
-            extracted = indexer::extract_python_symbols(file_path, content);
-        } else {
-            extracted = indexer::extract_js_symbols(file_path, content);
+        // A single malformed/pathological file (huge generated blob,
+        // degenerate regex input) must not abort indexing every other
+        // file — skip it and keep going. See lang_common.hpp's
+        // kMaxExtractableLineLength for the line-length guard that
+        // prevents this in the first place; this is the backstop for
+        // whatever that guard doesn't catch.
+        try {
+            std::vector<indexer::Symbol> extracted;
+            if (is_cpp) {
+                extracted = indexer::extract_cpp_symbols(file_path, content);
+            } else if (is_python) {
+                extracted = indexer::extract_python_symbols(file_path, content);
+            } else {
+                extracted = indexer::extract_js_symbols(file_path, content);
+            }
+            symbols.insert(symbols.end(),
+                            std::make_move_iterator(extracted.begin()),
+                            std::make_move_iterator(extracted.end()));
+        } catch (const std::exception& e) {
+            std::cerr << "warning: skipping " << file_path << ": " << e.what()
+                       << "\n";
         }
-        symbols.insert(symbols.end(),
-                        std::make_move_iterator(extracted.begin()),
-                        std::make_move_iterator(extracted.end()));
     }
 
     const std::filesystem::path db_path = indexer::index_db_path(root);

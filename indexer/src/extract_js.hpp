@@ -95,6 +95,8 @@ inline std::vector<Symbol> extract_js_symbols(const std::string& file_path,
             return it != close_for_open_line.end() ? it->second : start;
         };
 
+        if (line.size() > detail::kMaxExtractableLineLength) continue;
+
         std::smatch m;
         if (std::regex_match(line, m, class_re)) {
             Symbol s;

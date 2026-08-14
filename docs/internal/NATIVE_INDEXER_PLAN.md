@@ -212,6 +212,41 @@ commit, so this file is always an honest snapshot of what's actually done.
   escaping for things like leading `/` and embedded `/`) and is stable
   across platforms/compilers, unlike `std::hash<std::string>`.
 
+## Post-M9 hardening: real-world crash found in contextos
+
+The plan's own milestones only ever ran phasedex against itself and
+phasectl — small, hand-written, non-vendored codebases. First run
+against a genuinely different real-world project (`contextos`)
+crashed `index` outright:
+
+```
+phasedex index failed: libc++abi: terminating due to uncaught exception
+of type std::__1::regex_error: The complexity of an attempted match
+against a regular expression exceeded a pre-set level.
+```
+
+Root cause: `contextos` has `venv/` and `venv_intel_backup/` directories
+(vendored Python packages) that M2's ignore list didn't cover — it only
+excluded `.venv` (dotted), not `venv`. Vendored files like
+`_cocoa_builtins.py` (one line, 72,574 characters) got handed straight
+to `std::regex`, which threw past libc++'s complexity limit, and
+nothing caught it — the whole `index` run died instead of just that
+file.
+
+Two fixes, both real, both landed:
+- `discover.hpp`'s ignore list gained `venv` and `site-packages`.
+- Every extractor now skips any line over `kMaxExtractableLineLength`
+  (4000 chars, `lang_common.hpp`) before it reaches `std::regex` at
+  all — the actual fix, since an unignored vendor dir in some other
+  project would hit the same wall. `main.cpp` also wraps each file's
+  extraction in try/catch so one bad file can never abort the whole
+  `index` run again, regardless of cause.
+
+Re-ran against `contextos` after the fix: 1007 symbols across 88
+files, `org_exists`/etc. correctly resolved via real `search_symbols`
+tool calls in a live `phasectl chat` (impl/validate), verified against
+`phasectl query` independently.
+
 ## Open questions
 
 Resolve each at the milestone that first needs an answer — don't

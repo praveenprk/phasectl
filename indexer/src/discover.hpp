@@ -16,8 +16,8 @@ namespace indexer {
 // Directory names never descended into, wherever they appear in the tree.
 inline const std::unordered_set<std::string>& ignored_dir_names() {
     static const std::unordered_set<std::string> names = {
-        ".git", "node_modules", ".venv", "__pycache__", "dist", "build",
-        ".codegraph",
+        ".git", "node_modules", ".venv", "venv", "__pycache__", "dist",
+        "build", ".codegraph", "site-packages",
     };
     return names;
 }
