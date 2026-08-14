@@ -8,8 +8,16 @@
 // dogfooding — see extract_cpp.hpp): `index` extracts symbols from
 // discovered .cpp/.h/.hpp/.cc/... files and stores them. Other discovered
 // files are still counted but not yet parsed (later languages: M7).
-// `query` still always reports zero matches (that's M5).
+//
+// M5 wires `query` up to Store::search: case-insensitive substring match
+// against `name`, ranked exact-match-first. --json output is shaped like
+// CodeGraph's `{node: {...}, score}` (see docs/internal/NATIVE_INDEXER_PLAN.md,
+// "Contract to match") with a documented, deliberately smaller field set —
+// this indexer has no language/visibility/isExported/etc. metadata to report.
 
+#include <algorithm>
+#include <cctype>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -37,6 +45,29 @@ struct QueryOptions {
     int limit = 10;
     bool json = false;
 };
+
+std::string json_escape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + 8);
+    for (char c : s) {
+        switch (c) {
+            case '"': out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default:
+                if (static_cast<unsigned char>(c) < 0x20) {
+                    char buf[8];
+                    std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+                    out += buf;
+                } else {
+                    out += c;
+                }
+        }
+    }
+    return out;
+}
 
 int run_index(const std::vector<std::string>& args) {
     if (args.empty()) {
@@ -134,8 +165,54 @@ int run_query(const std::vector<std::string>& args) {
         return 1;
     }
 
+    const std::filesystem::path root = opts.path.empty() ? "." : opts.path;
+    const std::filesystem::path db_path = indexer::index_db_path(root);
+    std::error_code ec;
+    if (!std::filesystem::exists(db_path, ec)) {
+        std::cerr << "error: no index for " << root.string() << " — run "
+                   << "'indexer index " << root.string() << "' first\n";
+        return 1;
+    }
+
+    std::vector<indexer::Symbol> results;
+    try {
+        indexer::Store store(db_path);
+        results = store.search(opts.search, opts.kind, opts.limit);
+    } catch (const std::exception& e) {
+        std::cerr << "error: " << e.what() << "\n";
+        return 1;
+    }
+
     if (opts.json) {
-        std::cout << "[]\n";
+        std::cout << "[";
+        for (std::size_t i = 0; i < results.size(); ++i) {
+            const auto& s = results[i];
+            const bool exact =
+                s.name.size() == opts.search.size() &&
+                std::equal(s.name.begin(), s.name.end(), opts.search.begin(),
+                           [](char a, char b) {
+                               return std::tolower(static_cast<unsigned char>(a)) ==
+                                      std::tolower(static_cast<unsigned char>(b));
+                           });
+            std::cout << (i == 0 ? "" : ",") << "{\"node\":{"
+                       << "\"id\":" << s.id << ","
+                       << "\"kind\":\"" << json_escape(s.kind) << "\","
+                       << "\"name\":\"" << json_escape(s.name) << "\","
+                       << "\"qualifiedName\":\"" << json_escape(s.qualified_name) << "\","
+                       << "\"filePath\":\"" << json_escape(s.file_path) << "\","
+                       << "\"startLine\":" << s.start_line << ","
+                       << "\"endLine\":" << s.end_line << ","
+                       << "\"signature\":\"" << json_escape(s.signature) << "\""
+                       << "},\"score\":" << (exact ? "1.0" : "0.5") << "}";
+        }
+        std::cout << "]\n";
+    } else {
+        for (const auto& s : results) {
+            std::cout << s.kind << "  " << s.qualified_name << "\n"
+                       << "  " << s.file_path << ":" << s.start_line << "-"
+                       << s.end_line << "\n"
+                       << "  " << s.signature << "\n\n";
+        }
     }
     return 0;
 }

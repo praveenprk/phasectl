@@ -83,12 +83,25 @@ commit, so this file is always an honest snapshot of what's actually done.
       project with itself) before branching out to other source
       languages. No AST, no cross-file resolution — that's explicitly out
       of scope for a first cut.
-- [ ] **M5 — Query implementation.** Case-insensitive substring match
+- [x] **M5 — Query implementation.** Case-insensitive substring match
       against `name`, ranked exact-match-first. `--json` output shaped
       close enough to CodeGraph's `node.{kind,name,qualifiedName,
       filePath,startLine,endLine,signature}` that nothing in
       `src/phasectl/tools.py` needs to change to consume it — or, if it
       diverges, that divergence gets documented there explicitly.
+
+      **Divergence from CodeGraph's node shape (documented per this
+      milestone's own allowance):** `node` here is `{id, kind, name,
+      qualifiedName, filePath, startLine, endLine, signature}` only — no
+      `language`, `startColumn`/`endColumn`, `visibility`,
+      `isExported`/`isAsync`/`isStatic`/`isAbstract`, or `updatedAt`.
+      This indexer's naive line-based extractor (M4) has no data for any
+      of those; fabricating them would be worse than omitting them.
+      Doesn't matter to `tools.py` today — it passes indexer stdout
+      through to the model as opaque text, it doesn't parse the JSON —
+      but noted here in case that changes. `score` is a coarse heuristic
+      (`1.0` exact case-insensitive name match, `0.5` otherwise), not a
+      real relevance ranking.
 - [ ] **M6 — `status --json`.** `fileCount`/`nodeCount` at minimum, so
       `phasectl index`'s summary line picks it up for free.
 - [ ] **M7 — More source languages.** Expand M4's regex extraction to the
