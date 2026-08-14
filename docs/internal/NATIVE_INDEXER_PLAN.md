@@ -102,8 +102,15 @@ commit, so this file is always an honest snapshot of what's actually done.
       but noted here in case that changes. `score` is a coarse heuristic
       (`1.0` exact case-insensitive name match, `0.5` otherwise), not a
       real relevance ranking.
-- [ ] **M6 — `status --json`.** `fileCount`/`nodeCount` at minimum, so
-      `phasectl index`'s summary line picks it up for free.
+- [x] **M6 — `status --json`.** `fileCount`/`nodeCount` at minimum, so
+      `phasectl index`'s summary line picks it up for free. `fileCount`
+      here means "distinct files with at least one extracted symbol",
+      not every file M2's discovery found — the store only knows about
+      files the extractor actually produced rows for. Also reports
+      `initialized`, `projectPath`, `indexPath`, `backend`, and a
+      `nodesByKind` breakdown. Always exits 0, `initialized:false` with
+      zeroed counts when the project hasn't been indexed yet — `status`
+      reports state, it doesn't fail on the absence of state.
 - [ ] **M7 — More source languages.** Expand M4's regex extraction to the
       languages phasectl's own test targets actually use — Python and
       JavaScript first (matches what we exercised live against phasectl

@@ -14,6 +14,12 @@
 // CodeGraph's `{node: {...}, score}` (see docs/internal/NATIVE_INDEXER_PLAN.md,
 // "Contract to match") with a documented, deliberately smaller field set —
 // this indexer has no language/visibility/isExported/etc. metadata to report.
+//
+// M6 adds `status <path> --json`: fileCount/nodeCount (plus a kind
+// breakdown) so `phasectl index`'s _summarize_index picks it up for free
+// (src/phasectl/cli.py). Always exits 0 — an unindexed path just reports
+// initialized:false, same as index/query report their own errors
+// separately rather than status being the thing that fails.
 
 #include <algorithm>
 #include <cctype>
@@ -24,6 +30,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "cache_path.hpp"
@@ -35,7 +42,8 @@ namespace {
 
 void usage(std::ostream& out) {
     out << "usage: indexer index <path>\n"
-        << "       indexer query <search> [--path <dir>] [--json] [--limit N] [--kind K]\n";
+        << "       indexer query <search> [--path <dir>] [--json] [--limit N] [--kind K]\n"
+        << "       indexer status <path> [--json]\n";
 }
 
 struct QueryOptions {
@@ -217,6 +225,76 @@ int run_query(const std::vector<std::string>& args) {
     return 0;
 }
 
+int run_status(const std::vector<std::string>& args) {
+    std::string path;
+    bool json = false;
+    bool have_path = false;
+
+    for (const auto& arg : args) {
+        if (arg == "--json") {
+            json = true;
+        } else if (!have_path) {
+            path = arg;
+            have_path = true;
+        } else {
+            std::cerr << "error: unexpected argument '" << arg << "'\n";
+            return 1;
+        }
+    }
+
+    if (!have_path) {
+        std::cerr << "error: status requires a <path>\n";
+        usage(std::cerr);
+        return 1;
+    }
+
+    const std::filesystem::path root = path;
+    const std::filesystem::path db_path = indexer::index_db_path(root);
+    std::error_code ec;
+    const bool initialized = std::filesystem::exists(db_path, ec);
+
+    int file_count = 0;
+    int node_count = 0;
+    std::vector<std::pair<std::string, int>> kinds;
+    if (initialized) {
+        try {
+            indexer::Store store(db_path);
+            file_count = store.file_count();
+            node_count = store.node_count();
+            kinds = store.kind_counts();
+        } catch (const std::exception& e) {
+            std::cerr << "error: " << e.what() << "\n";
+            return 1;
+        }
+    }
+
+    if (json) {
+        std::cout << "{\"initialized\":" << (initialized ? "true" : "false")
+                   << ",\"projectPath\":\"" << json_escape(root.string()) << "\""
+                   << ",\"indexPath\":\"" << json_escape(db_path.string()) << "\""
+                   << ",\"fileCount\":" << file_count
+                   << ",\"nodeCount\":" << node_count
+                   << ",\"backend\":\"sqlite\""
+                   << ",\"nodesByKind\":{";
+        for (std::size_t i = 0; i < kinds.size(); ++i) {
+            std::cout << (i == 0 ? "" : ",") << "\"" << json_escape(kinds[i].first)
+                       << "\":" << kinds[i].second;
+        }
+        std::cout << "}}\n";
+    } else {
+        std::cout << "initialized: " << (initialized ? "yes" : "no") << "\n";
+        if (initialized) {
+            std::cout << "files:  " << file_count << "\n"
+                       << "nodes:  " << node_count << "\n"
+                       << "index:  " << db_path.string() << "\n";
+            for (const auto& [kind, count] : kinds) {
+                std::cout << "  " << kind << ": " << count << "\n";
+            }
+        }
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -233,6 +311,9 @@ int main(int argc, char** argv) {
     }
     if (command == "query") {
         return run_query(args);
+    }
+    if (command == "status") {
+        return run_status(args);
     }
 
     std::cerr << "error: unknown command '" << command << "'\n";

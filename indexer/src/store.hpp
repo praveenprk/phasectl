@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <sqlite3.h>
@@ -103,6 +104,42 @@ public:
         exec("COMMIT;");
     }
 
+    // Total symbol rows (M6's "nodeCount").
+    int node_count() {
+        return scalar_int("SELECT COUNT(*) FROM symbols;");
+    }
+
+    // Distinct files with at least one extracted symbol (M6's
+    // "fileCount"). Not the same as every file `index` discovered (M2) —
+    // only files the extractor actually produced rows for.
+    int file_count() {
+        return scalar_int("SELECT COUNT(DISTINCT file_path) FROM symbols;");
+    }
+
+    // kind -> row count, e.g. {"function": 12, "class": 2}.
+    std::vector<std::pair<std::string, int>> kind_counts() {
+        std::vector<std::pair<std::string, int>> counts;
+        sqlite3_stmt* stmt = nullptr;
+        const char* sql =
+            "SELECT kind, COUNT(*) FROM symbols GROUP BY kind ORDER BY kind;";
+        if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+            throw std::runtime_error(std::string("failed to prepare kind_counts: ") +
+                                      sqlite3_errmsg(db_));
+        }
+        int rc;
+        while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+            counts.emplace_back(
+                reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)),
+                sqlite3_column_int(stmt, 1));
+        }
+        sqlite3_finalize(stmt);
+        if (rc != SQLITE_DONE) {
+            throw std::runtime_error(std::string("kind_counts failed: ") +
+                                      sqlite3_errmsg(db_));
+        }
+        return counts;
+    }
+
     // Case-insensitive substring match against `name`, ranked
     // exact-match-first (M5). `kind` empty means no kind filter.
     std::vector<Symbol> search(const std::string& term, const std::string& kind,
@@ -160,6 +197,20 @@ public:
     }
 
 private:
+    int scalar_int(const char* sql) {
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+            throw std::runtime_error(std::string("failed to prepare query: ") +
+                                      sqlite3_errmsg(db_));
+        }
+        int value = 0;
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            value = sqlite3_column_int(stmt, 0);
+        }
+        sqlite3_finalize(stmt);
+        return value;
+    }
+
     void exec(const char* sql) {
         char* err = nullptr;
         if (sqlite3_exec(db_, sql, nullptr, nullptr, &err) != SQLITE_OK) {
