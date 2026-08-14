@@ -77,7 +77,7 @@ commit, so this file is always an honest snapshot of what's actually done.
       location is settled (see "Resolved decisions" below): XDG cache
       dir, not project-local — nothing gets written under the indexed
       project's own tree.
-- [ ] **M4 — Naive symbol extraction, one language.** Regex-based
+- [x] **M4 — Naive symbol extraction, one language.** Regex-based
       extraction of function/class/method definitions. Start by parsing
       the indexer's own C++ source (self-hosted dogfooding — index this
       project with itself) before branching out to other source

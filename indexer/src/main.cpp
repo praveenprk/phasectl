@@ -4,17 +4,23 @@
 //   indexer index <path>
 //   indexer query <search> [--path <dir>] [--json] [--limit N] [--kind K]
 //
-// M2 adds file discovery: `index` walks the tree and counts source files
-// (reported to stderr; no on-disk storage yet). `query` still always
-// reports zero matches.
+// M4 adds symbol extraction for one source language (C++, self-hosted
+// dogfooding — see extract_cpp.hpp): `index` extracts symbols from
+// discovered .cpp/.h/.hpp/.cc/... files and stores them. Other discovered
+// files are still counted but not yet parsed (later languages: M7).
+// `query` still always reports zero matches (that's M5).
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "cache_path.hpp"
 #include "discover.hpp"
+#include "extract_cpp.hpp"
 #include "store.hpp"
 
 namespace {
@@ -48,18 +54,42 @@ int run_index(const std::vector<std::string>& args) {
 
     const auto files = indexer::discover_source_files(root);
 
+    static const std::unordered_set<std::string> kCppExtensions = {
+        ".c", ".h", ".cc", ".hh", ".cpp", ".hpp", ".cxx", ".hxx",
+    };
+
+    std::vector<indexer::Symbol> symbols;
+    for (const auto& file : files) {
+        if (!kCppExtensions.count(file.extension().string())) continue;
+
+        std::ifstream in(file, std::ios::binary);
+        if (!in) continue;
+        std::ostringstream buf;
+        buf << in.rdbuf();
+
+        std::filesystem::path abs = std::filesystem::weakly_canonical(file, ec);
+        const std::string file_path = ec ? file.string() : abs.string();
+
+        auto extracted = indexer::extract_cpp_symbols(file_path, buf.str());
+        symbols.insert(symbols.end(),
+                        std::make_move_iterator(extracted.begin()),
+                        std::make_move_iterator(extracted.end()));
+    }
+
     const std::filesystem::path db_path = indexer::index_db_path(root);
     try {
         indexer::Store store(db_path);
-        (void)store;
+        store.clear();
+        store.insert_all(symbols);
     } catch (const std::exception& e) {
         std::cerr << "error: " << e.what() << "\n";
         return 1;
     }
 
     std::cerr << "indexed " << files.size() << " file"
-               << (files.size() == 1 ? "" : "s") << " under " << root.string()
-               << " (db: " << db_path.string() << ")\n";
+               << (files.size() == 1 ? "" : "s") << ", " << symbols.size()
+               << " symbol" << (symbols.size() == 1 ? "" : "s") << " under "
+               << root.string() << " (db: " << db_path.string() << ")\n";
     return 0;
 }
 

@@ -1,19 +1,29 @@
 // On-disk index store (M3, docs/internal/NATIVE_INDEXER_PLAN.md).
 //
 // SQLite-backed (C API — libsqlite3 only, no extra dependency), holding one
-// `symbols` row per extracted definition. No extraction happens yet (that's
-// M4); this milestone only opens/creates the database and its schema at the
-// XDG cache path resolved by cache_path.hpp.
+// `symbols` row per extracted definition (M4 onward — extract.hpp produces
+// these) at the XDG cache path resolved by cache_path.hpp.
 
 #pragma once
 
 #include <filesystem>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <sqlite3.h>
 
 namespace indexer {
+
+struct Symbol {
+    std::string kind;
+    std::string name;
+    std::string qualified_name;
+    std::string file_path;
+    int start_line = 0;
+    int end_line = 0;
+    std::string signature;
+};
 
 class Store {
 public:
@@ -52,6 +62,45 @@ public:
     }
 
     sqlite3* handle() const { return db_; }
+
+    // Drops every existing row. `index` calls this before re-inserting, so
+    // re-running it is a full rebuild rather than an ever-growing append —
+    // matches the contract's "index is idempotent" requirement.
+    void clear() { exec("DELETE FROM symbols;"); }
+
+    void insert_all(const std::vector<Symbol>& symbols) {
+        exec("BEGIN TRANSACTION;");
+        sqlite3_stmt* stmt = nullptr;
+        const char* sql =
+            "INSERT INTO symbols (kind, name, qualified_name, file_path, "
+            "start_line, end_line, signature) VALUES (?, ?, ?, ?, ?, ?, ?);";
+        if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+            const std::string msg = sqlite3_errmsg(db_);
+            exec("ROLLBACK;");
+            throw std::runtime_error("failed to prepare insert: " + msg);
+        }
+        for (const auto& s : symbols) {
+            sqlite3_reset(stmt);
+            sqlite3_bind_text(stmt, 1, s.kind.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 2, s.name.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 3, s.qualified_name.c_str(), -1,
+                               SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 4, s.file_path.c_str(), -1,
+                               SQLITE_TRANSIENT);
+            sqlite3_bind_int(stmt, 5, s.start_line);
+            sqlite3_bind_int(stmt, 6, s.end_line);
+            sqlite3_bind_text(stmt, 7, s.signature.c_str(), -1,
+                               SQLITE_TRANSIENT);
+            if (sqlite3_step(stmt) != SQLITE_DONE) {
+                const std::string msg = sqlite3_errmsg(db_);
+                sqlite3_finalize(stmt);
+                exec("ROLLBACK;");
+                throw std::runtime_error("failed to insert symbol: " + msg);
+            }
+        }
+        sqlite3_finalize(stmt);
+        exec("COMMIT;");
+    }
 
 private:
     void exec(const char* sql) {
