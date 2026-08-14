@@ -152,12 +152,38 @@ commit, so this file is always an honest snapshot of what's actually done.
       indexer/packaging/homebrew/phasedex.rb`. Retarget to `main` and
       eventually a tagged `url`/`sha256` once M9 lands and this branch
       merges.
-- [ ] **M9 — Swap the default.** Once this binary has real feature parity
+- [x] **M9 — Swap the default.** Once this binary has real feature parity
       with CodeGraph for the query patterns phasectl actually exercises
       (see the live walkthrough in PR #2's description), flip
       `_DEFAULT_INDEXER_COMMAND` in `src/phasectl/tools.py` and the
       README's default. Keep CodeGraph documented as a swappable option,
       same as any other indexer under `[tools].indexer_command`.
+
+      Feature parity checked against PR #2's actual test plan (not just
+      the abstract contract): `phasectl index` (fresh + re-index),
+      `phasectl query` (plain + `--json`, matches + no-match), `phasectl
+      check`'s indexer row, and the impl/validate `search_symbols` tool
+      call all exercise nothing beyond `index`/`query --path --json`/
+      `status --json` — all three landed at M3/M5/M6. Flipped
+      `_DEFAULT_INDEXER_COMMAND` (tools.py), `_indexer_binary_from_config`
+      and the `check` row's fallback (cli.py), and the default
+      `config.toml` template written on first run — all four places that
+      previously hardcoded "codegraph" as the fallback. CodeGraph stays
+      fully documented (README's "Swap code indexers", `_run_index`'s
+      init-fallback comment) as a supported swap-in, not removed.
+
+      Verified against real code paths, not just the source diff: built
+      `phasedex`, put it on `PATH`, and ran the actual `phasectl` CLI
+      from source (`uv run phasectl`) against a scratch `XDG_CONFIG_HOME`
+      with **no `indexer_command` set anywhere** — `phasectl check`
+      reported `indexer: ✓ phasedex found on PATH`; `phasectl index`
+      printed "indexing ... via phasedex..." and "indexed: 223 nodes
+      across 23 files" (real status --json summary); `phasectl query
+      chat` (plain and `--json`) returned real, correctly-qualified
+      results. Also called `ToolExecutor.execute("search_symbols", ...)`
+      directly — the exact code path `phasectl chat`'s impl/validate
+      tool loop uses — and confirmed `_DEFAULT_INDEXER_COMMAND ==
+      "phasedex"` end to end without touching config.
 
 ## Resolved decisions
 

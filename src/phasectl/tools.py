@@ -3,14 +3,16 @@
 phasectl shells out directly to the configured indexer binary — no MCP,
 no JSON-RPC handshake, no dynamic tool discovery. There is exactly one
 tool, `search_symbols`, which runs `<indexer> query <term> --path
-<index_path>` as a subprocess and returns its stdout verbatim. Verified
-against the default indexer, CodeGraph (github.com/colbymchenry/codegraph):
+<index_path>` as a subprocess and returns its stdout verbatim. Default
+indexer is phasedex (docs/internal/NATIVE_INDEXER_PLAN.md), phasectl's
+own native C++ indexer — no Node, no npm, no interpreter runtime.
+CodeGraph (github.com/colbymchenry/codegraph) remains a supported swap:
 `codegraph query <search> [--path <dir>] [--json]` — no `--repo`-style
 scoping, and `--path` is required to target a project from outside its
 directory, which is the common case for phasectl.
 
     [tools]
-    indexer_command = "codegraph"   # default; change to swap indexers
+    indexer_command = "phasedex"   # default; change to swap indexers
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ import shutil
 import subprocess
 
 
-_DEFAULT_INDEXER_COMMAND = "codegraph"
+_DEFAULT_INDEXER_COMMAND = "phasedex"
 
 _SEARCH_SYMBOLS_TOOL = {
     "name": "search_symbols",
