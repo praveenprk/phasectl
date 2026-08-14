@@ -57,7 +57,7 @@ One commit per milestone, on this branch (`native-cpp-indexer`). Check the
 box and commit the plan-file edit together with the code in the same
 commit, so this file is always an honest snapshot of what's actually done.
 
-- [ ] **M1 — CLI skeleton.** CMake project, builds a binary that parses
+- [x] **M1 — CLI skeleton.** CMake project, builds a binary that parses
       `index <path>` and `query <search> [--path] [--json] [--limit] [--kind]`
       per the contract above. No real indexing yet: `index` always
       succeeds and does nothing; `query` always prints `[]`/nothing.
