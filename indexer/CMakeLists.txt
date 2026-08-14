@@ -8,4 +8,16 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(SQLite3 QUIET IMPORTED_TARGET sqlite3)
+endif()
+
 add_executable(indexer src/main.cpp)
+
+if(TARGET PkgConfig::SQLite3)
+    target_link_libraries(indexer PRIVATE PkgConfig::SQLite3)
+else()
+    find_package(SQLite3 REQUIRED)
+    target_link_libraries(indexer PRIVATE SQLite::SQLite3)
+endif()

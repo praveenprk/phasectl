@@ -70,7 +70,7 @@ commit, so this file is always an honest snapshot of what's actually done.
       Done when: file count is correct on phasectl's own repo (should
       match CodeGraph's `fileCount` of 16 for reference, modulo language
       allowlist differences).
-- [ ] **M3 — On-disk index store.** SQLite (C API — no extra dependency
+- [x] **M3 — On-disk index store.** SQLite (C API — no extra dependency
       beyond libsqlite3, which is preinstalled on macOS and trivially
       available on Linux) schema for symbols: `id, kind, name,
       qualified_name, file_path, start_line, end_line, signature`. Storage
@@ -124,6 +124,12 @@ commit, so this file is always an honest snapshot of what's actually done.
   literal rather than aspirational, unlike CodeGraph's `.codegraph/`
   convention which does write into the project tree. Settled — M3
   implements this, doesn't re-litigate it.
+- **`<project-key>` derivation: hashed, not path-mirrored.** FNV-1a
+  (64-bit, hex-encoded) over the canonicalized absolute project path —
+  see `indexer/src/cache_path.hpp`. Avoids reproducing the project's full
+  directory structure under the cache dir (path-mirroring would need
+  escaping for things like leading `/` and embedded `/`) and is stable
+  across platforms/compilers, unlike `std::hash<std::string>`.
 
 ## Open questions
 

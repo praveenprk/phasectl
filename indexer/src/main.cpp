@@ -13,7 +13,9 @@
 #include <string>
 #include <vector>
 
+#include "cache_path.hpp"
 #include "discover.hpp"
+#include "store.hpp"
 
 namespace {
 
@@ -45,9 +47,19 @@ int run_index(const std::vector<std::string>& args) {
     }
 
     const auto files = indexer::discover_source_files(root);
+
+    const std::filesystem::path db_path = indexer::index_db_path(root);
+    try {
+        indexer::Store store(db_path);
+        (void)store;
+    } catch (const std::exception& e) {
+        std::cerr << "error: " << e.what() << "\n";
+        return 1;
+    }
+
     std::cerr << "indexed " << files.size() << " file"
                << (files.size() == 1 ? "" : "s") << " under " << root.string()
-               << "\n";
+               << " (db: " << db_path.string() << ")\n";
     return 0;
 }
 
