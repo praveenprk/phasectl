@@ -20,6 +20,12 @@
 // (src/phasectl/cli.py). Always exits 0 — an unindexed path just reports
 // initialized:false, same as index/query report their own errors
 // separately rather than status being the thing that fails.
+//
+// M7 adds two more source languages beyond C++'s self-hosted dogfood:
+// Python (extract_python.hpp) and JavaScript/TypeScript (extract_js.hpp).
+// `index` now dispatches each discovered file to whichever extractor
+// matches its extension; files whose extension has no extractor are
+// still counted (M2) but contribute no symbols.
 
 #include <algorithm>
 #include <cctype>
@@ -36,6 +42,8 @@
 #include "cache_path.hpp"
 #include "discover.hpp"
 #include "extract_cpp.hpp"
+#include "extract_js.hpp"
+#include "extract_python.hpp"
 #include "store.hpp"
 
 namespace {
@@ -96,10 +104,18 @@ int run_index(const std::vector<std::string>& args) {
     static const std::unordered_set<std::string> kCppExtensions = {
         ".c", ".h", ".cc", ".hh", ".cpp", ".hpp", ".cxx", ".hxx",
     };
+    static const std::unordered_set<std::string> kPythonExtensions = {".py"};
+    static const std::unordered_set<std::string> kJsExtensions = {
+        ".js", ".jsx", ".mjs", ".ts", ".tsx",
+    };
 
     std::vector<indexer::Symbol> symbols;
     for (const auto& file : files) {
-        if (!kCppExtensions.count(file.extension().string())) continue;
+        const std::string ext = file.extension().string();
+        const bool is_cpp = kCppExtensions.count(ext) != 0;
+        const bool is_python = kPythonExtensions.count(ext) != 0;
+        const bool is_js = kJsExtensions.count(ext) != 0;
+        if (!is_cpp && !is_python && !is_js) continue;
 
         std::ifstream in(file, std::ios::binary);
         if (!in) continue;
@@ -108,8 +124,16 @@ int run_index(const std::vector<std::string>& args) {
 
         std::filesystem::path abs = std::filesystem::weakly_canonical(file, ec);
         const std::string file_path = ec ? file.string() : abs.string();
+        const std::string content = buf.str();
 
-        auto extracted = indexer::extract_cpp_symbols(file_path, buf.str());
+        std::vector<indexer::Symbol> extracted;
+        if (is_cpp) {
+            extracted = indexer::extract_cpp_symbols(file_path, content);
+        } else if (is_python) {
+            extracted = indexer::extract_python_symbols(file_path, content);
+        } else {
+            extracted = indexer::extract_js_symbols(file_path, content);
+        }
         symbols.insert(symbols.end(),
                         std::make_move_iterator(extracted.begin()),
                         std::make_move_iterator(extracted.end()));

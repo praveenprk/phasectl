@@ -111,13 +111,23 @@ commit, so this file is always an honest snapshot of what's actually done.
       `nodesByKind` breakdown. Always exits 0, `initialized:false` with
       zeroed counts when the project hasn't been indexed yet — `status`
       reports state, it doesn't fail on the absence of state.
-- [ ] **M7 — More source languages.** Expand M4's regex extraction to the
+- [x] **M7 — More source languages.** Expand M4's regex extraction to the
       languages phasectl's own test targets actually use — Python and
       JavaScript first (matches what we exercised live against phasectl
       and contextos in the PR #2 walkthrough), then whatever else comes
       up. Tree-sitter would be the "real" answer but is itself a
       dependency to pull in — leave that decision for when this milestone
       is actually reached, not now.
+
+      Landed as `extract_python.hpp` (indentation-based scoping — no
+      braces in Python, so a scope closes at the first subsequent line
+      whose indent is <= its header's) and `extract_js.hpp` (brace-based,
+      like C++; also covers `.jsx`/`.mjs`/`.ts`/`.tsx` — TS type
+      annotations don't break arg capture since args are opaque text, not
+      parsed, but TS-only syntax like `interface`/`type` isn't
+      recognized). Pulled the comment-stripping/brace-matching/
+      trailing-identifier helpers C++ and JS both need into
+      `lang_common.hpp` rather than forking them a second time.
 - [ ] **M8 — Packaging.** Static binary build (macOS + Linux), Homebrew
       formula. This is what makes `brew install <name>` real.
 - [ ] **M9 — Swap the default.** Once this binary has real feature parity
