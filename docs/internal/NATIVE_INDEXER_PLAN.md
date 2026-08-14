@@ -18,8 +18,8 @@ phasectl itself becomes Rust, since the contract below is language-agnostic
 kind involved.** CMake + C++ only (M1) — no Python, no Node, no scripting
 glue anywhere in the build or the binary. Where "language" comes up again
 later in this plan (M4, M7, and the first open question below), it means
-the *source language the indexer parses* — the code it reads out of a
-target project like phasectl or contextos — which is a completely separate
+the *source language the indexer parses* — the code it reads out of
+whatever target project it's pointed at — which is a completely separate
 axis from what the indexer itself is written in. Don't conflate the two;
 that ambiguity is exactly what this note exists to kill.
 
@@ -113,9 +113,9 @@ commit, so this file is always an honest snapshot of what's actually done.
       reports state, it doesn't fail on the absence of state.
 - [x] **M7 — More source languages.** Expand M4's regex extraction to the
       languages phasectl's own test targets actually use — Python and
-      JavaScript first (matches what we exercised live against phasectl
-      and contextos in the PR #2 walkthrough), then whatever else comes
-      up. Tree-sitter would be the "real" answer but is itself a
+      JavaScript first (matches what we exercised live in the PR #2
+      walkthrough), then whatever else comes up. Tree-sitter would be
+      the "real" answer but is itself a
       dependency to pull in — leave that decision for when this milestone
       is actually reached, not now.
 
@@ -212,12 +212,12 @@ commit, so this file is always an honest snapshot of what's actually done.
   escaping for things like leading `/` and embedded `/`) and is stable
   across platforms/compilers, unlike `std::hash<std::string>`.
 
-## Post-M9 hardening: real-world crash found in contextos
+## Post-M9 hardening: real-world crash found in live testing
 
 The plan's own milestones only ever ran phasedex against itself and
 phasectl — small, hand-written, non-vendored codebases. First run
-against a genuinely different real-world project (`contextos`)
-crashed `index` outright:
+against a genuinely different, much larger real-world project crashed
+`index` outright:
 
 ```
 phasedex index failed: libc++abi: terminating due to uncaught exception
@@ -225,13 +225,13 @@ of type std::__1::regex_error: The complexity of an attempted match
 against a regular expression exceeded a pre-set level.
 ```
 
-Root cause: `contextos` has `venv/` and `venv_intel_backup/` directories
-(vendored Python packages) that M2's ignore list didn't cover — it only
-excluded `.venv` (dotted), not `venv`. Vendored files like
-`_cocoa_builtins.py` (one line, 72,574 characters) got handed straight
-to `std::regex`, which threw past libc++'s complexity limit, and
-nothing caught it — the whole `index` run died instead of just that
-file.
+Root cause: the test project had `venv/` and `venv_intel_backup/`
+directories (vendored Python packages) that M2's ignore list didn't
+cover — it only excluded `.venv` (dotted), not `venv`. Vendored files
+like `_cocoa_builtins.py` (one line, 72,574 characters) got handed
+straight to `std::regex`, which threw past libc++'s complexity limit,
+and nothing caught it — the whole `index` run died instead of just
+that file.
 
 Two fixes, both real, both landed:
 - `discover.hpp`'s ignore list gained `venv` and `site-packages`.
@@ -242,10 +242,10 @@ Two fixes, both real, both landed:
   extraction in try/catch so one bad file can never abort the whole
   `index` run again, regardless of cause.
 
-Re-ran against `contextos` after the fix: 1007 symbols across 88
-files, `org_exists`/etc. correctly resolved via real `search_symbols`
-tool calls in a live `phasectl chat` (impl/validate), verified against
-`phasectl query` independently.
+Re-ran against the same project after the fix: 1007 symbols across 88
+files, results correctly resolved via real `search_symbols` tool calls
+in a live `phasectl chat` (impl/validate), verified against `phasectl
+query` independently.
 
 ## Open questions
 
@@ -254,9 +254,9 @@ pre-decide them here:
 
 - **First non-self source language for M7**: M4 dogfoods on the
   indexer's own C++ source; plan above suggests Python/JavaScript next
-  since that's what we exercised live in the PR #2 walkthrough (phasectl,
-  contextos), but worth a second look if the primary target audience
-  skews differently. (Reminder: this is about what source code the
+  since that's what we exercised live in the PR #2 walkthrough, but
+  worth a second look if the primary target audience skews
+  differently. (Reminder: this is about what source code the
   indexer *parses*, not what the indexer is *written in* — the binary is
   C++ throughout, that part isn't in question.)
 

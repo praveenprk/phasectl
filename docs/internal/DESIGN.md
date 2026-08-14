@@ -8,9 +8,10 @@ in the terminal, stores everything locally in SQLite, and enforces phase boundar
 so that Claude behaves differently depending on whether you are ideating, designing,
 implementing, validating, or snapshotting.
 
-The tool is built for one engineer working on **ContextOS** — a governed cognitive
-memory system with 307+ tests, RFC → SPEC → TEST → Code discipline, DECISION-019
-logged, and RFC-026 scoping AgentNode identity work.
+The tool is built for one engineer working solo on a large, actively-evolving
+codebase with its own RFC → SPEC → TEST → Code discipline and a large existing
+test suite — phasectl needed to serve that workflow without baking in anything
+project-specific.
 
 ## Constraints (non-negotiable)
 
