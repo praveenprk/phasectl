@@ -4,12 +4,16 @@
 //   indexer index <path>
 //   indexer query <search> [--path <dir>] [--json] [--limit N] [--kind K]
 //
-// M1 has no real indexing or storage yet: `index` always succeeds and does
-// nothing; `query` always reports zero matches.
+// M2 adds file discovery: `index` walks the tree and counts source files
+// (reported to stderr; no on-disk storage yet). `query` still always
+// reports zero matches.
 
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <vector>
+
+#include "discover.hpp"
 
 namespace {
 
@@ -32,6 +36,18 @@ int run_index(const std::vector<std::string>& args) {
         usage(std::cerr);
         return 1;
     }
+
+    const std::filesystem::path root = args.front();
+    std::error_code ec;
+    if (!std::filesystem::exists(root, ec) || ec) {
+        std::cerr << "error: path does not exist: " << root.string() << "\n";
+        return 1;
+    }
+
+    const auto files = indexer::discover_source_files(root);
+    std::cerr << "indexed " << files.size() << " file"
+               << (files.size() == 1 ? "" : "s") << " under " << root.string()
+               << "\n";
     return 0;
 }
 

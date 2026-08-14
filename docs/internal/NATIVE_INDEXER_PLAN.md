@@ -63,7 +63,7 @@ commit, so this file is always an honest snapshot of what's actually done.
       succeeds and does nothing; `query` always prints `[]`/nothing.
       Done when: `cmake --build . && ./indexer index . && ./indexer query
       foo --json` prints `[]` and exits 0.
-- [ ] **M2 — File discovery.** Walk the project tree, skip `.git` and a
+- [x] **M2 — File discovery.** Walk the project tree, skip `.git` and a
       small hardcoded vendor/ignore list (`node_modules`, `.venv`,
       `__pycache__`, `dist`, `build`, `.codegraph`), filter to a source
       extension allowlist. No storage yet — `index` just counts files.
