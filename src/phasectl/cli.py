@@ -408,7 +408,8 @@ def start(
     else:
         progress.step(f"no prior session for '{project}' — starting fresh...")
 
-    resume_block = ""
+    resume_git_state: dict = {}
+    resume_synthesis = ""
     if phase == "orient" and not no_fuse:
         session_summary = ""
         if prior:
@@ -445,10 +446,10 @@ def start(
             progress.step(
                 f"synthesizing resume block via {_compression_label(config)}..."
             )
-            resume_block = build_resume_block(git_state, session_summary, agent_context, config)
+            resume_git_state, resume_synthesis = build_resume_block(git_state, session_summary, agent_context, config)
         except Exception as e:
             _diag(f"[orient] synthesis failed: {e}", quiet=quiet)
-            resume_block = ""
+            resume_synthesis = ""
 
     progress.step("opening session...")
     if prior:
@@ -467,17 +468,19 @@ def start(
             role="system",
             content=injection,
             token_estimate=estimate_tokens(injection),
+            origin="prior_session",
         )
     else:
         session = open_session(store, project, phase)
 
-    if resume_block:
+    if resume_synthesis:
         store.add_turn(
             session_id=session.id,
             phase=phase,
             role="system",
-            content=resume_block,
-            token_estimate=estimate_tokens(resume_block),
+            content=resume_synthesis,
+            token_estimate=estimate_tokens(resume_synthesis),
+            origin="resume",
         )
 
     seed_paths = seed or []
@@ -495,20 +498,39 @@ def start(
                 role="system",
                 content=seed_block,
                 token_estimate=estimate_tokens(seed_block),
+                origin="seed",
             )
 
     progress.done()
-    if resume_block:
-        print(resume_block)
+    if resume_git_state.get("branch"):
+        dirty = resume_git_state.get("dirty_count", 0)
+        dirty_display = "unavailable" if dirty is None else dirty
+        head = (resume_git_state.get("last_commit") or {}).get("hash")
+        parts = [
+            f"branch={resume_git_state['branch']}",
+            f"dirty={'unavailable' if resume_git_state.get('dirty') is None else bool(resume_git_state.get('dirty'))}",
+            f"dirty_count={dirty_display}",
+        ]
+        if head:
+            parts.append(f"head={head}")
+        else:
+            parts.append("head=unavailable")
+        print("CURRENT_GIT_STATE: " + " ".join(parts))
+    elif resume_git_state:
+        print("CURRENT_GIT_STATE: unavailable")
+    if resume_synthesis:
+        print("[MODEL-DERIVED RESUME (non-authoritative)]")
+        print(resume_synthesis)
     print(f"session opened: {session.id[:8]} {phase}")
 
 
 def _is_prior_session_memory_turn(turn):
-    content = turn.get("content", "") or ""
-    return (
-        "Prior session summary:" in content
-        or "Last turns from prior session:" in content
-    )
+    origin = turn.get("origin")
+    if origin == "prior_session":
+        return True
+    if origin is None and turn.get("role") == "system":
+        return True
+    return False
 
 
 @app.command()
@@ -651,6 +673,7 @@ def chat(
         role="user",
         content=full_message,
         token_estimate=estimate_tokens(full_message),
+        origin="user",
     )
 
     provider_label = _provider_label(config)
@@ -692,6 +715,7 @@ def chat(
         role="assistant",
         content=response,
         token_estimate=estimate_tokens(response),
+        origin="assistant",
     )
 
     all_turns = store.get_turns(session_data["id"])

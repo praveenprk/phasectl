@@ -16,23 +16,14 @@ def test_resume_block_grounds_current_branch_in_live_git(monkeypatch):
         lambda *a, **k: f"Resume here: on {HIST_BRANCH}\nState: branch={HIST_BRANCH}",
     )
 
-    result = build_resume_block(git, session_summary, agent_context, {})
+    git_state, synthesis = build_resume_block(git, session_summary, agent_context, {})
 
-    assert f"branch: {LIVE_BRANCH}" in result
-    assert f"branch: {HIST_BRANCH}" not in result
+    assert git_state.get("branch") == LIVE_BRANCH
+    assert HIST_BRANCH in synthesis
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "The public resume block is a single prose string: it cannot mark which "
-        "branch claim is authoritative current Git state versus synthesized "
-        "historical narrative, so a consumer can still mistake "
-        f"{HIST_BRANCH} for current state."
-    ),
-)
-def test_resume_block_exposes_authoritative_current_git_state_boundary(monkeypatch):
-    git = {"branch": LIVE_BRANCH, "dirty": False, "dirty_count": 0}
+def test_resume_block_separates_authoritative_git_state_from_synthesis(monkeypatch):
+    git = {"branch": LIVE_BRANCH, "dirty": False, "dirty_count": 0, "last_commit": {"hash": "abc123", "subject": "s", "when": "now"}}
     session_summary = f"Prior session summary references {HIST_BRANCH}."
     agent_context = f"Agent transcript references {HIST_BRANCH}."
 
@@ -44,9 +35,9 @@ def test_resume_block_exposes_authoritative_current_git_state_boundary(monkeypat
         ),
     )
 
-    result = build_resume_block(git, session_summary, agent_context, {})
+    git_state, synthesis = build_resume_block(git, session_summary, agent_context, {})
 
-    # Required property: an unambiguous, machine-identifiable authoritative
-    # current-state field must be distinguishable from synthesized narrative.
-    assert "AUTHORITATIVE_CURRENT_GIT_STATE: branch=" + LIVE_BRANCH in result
-    assert HIST_BRANCH not in result.split("AUTHORITATIVE_CURRENT_GIT_STATE", 1)[-1]
+    assert git_state.get("branch") == LIVE_BRANCH
+    assert (git_state.get("last_commit") or {}).get("hash") == "abc123"
+    assert HIST_BRANCH in synthesis
+    assert git_state.get("branch") != HIST_BRANCH

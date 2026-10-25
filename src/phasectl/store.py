@@ -13,7 +13,7 @@ class AbstractStore(Protocol):
 
     def close_session(self, id: str, phase: str, summary: str, total_tokens: int) -> None: ...
 
-    def add_turn(self, session_id: str, phase: str, role: str, content: str, token_estimate: int) -> int: ...
+    def add_turn(self, session_id: str, phase: str, role: str, content: str, token_estimate: int, origin: Optional[str] = None) -> int: ...
 
     def get_turns(self, session_id: str) -> list[dict]: ...
 
@@ -35,6 +35,7 @@ class SQLiteStore:
         self.conn = sqlite3.connect(self.db_path)
         self.conn.row_factory = sqlite3.Row
         self._init_db()
+        self._migrate_db()
 
     def _init_db(self) -> None:
         self.conn.executescript("""
@@ -57,9 +58,19 @@ class SQLiteStore:
                 content         TEXT NOT NULL,
                 token_estimate  INTEGER NOT NULL,
                 timestamp       TEXT NOT NULL,
-                compressed      INTEGER NOT NULL DEFAULT 0
+                compressed      INTEGER NOT NULL DEFAULT 0,
+                origin          TEXT
             );
         """)
+
+    def _migrate_db(self) -> None:
+        columns = {
+            row["name"]
+            for row in self.conn.execute("PRAGMA table_info(turns)").fetchall()
+        }
+        if "origin" not in columns:
+            self.conn.execute("ALTER TABLE turns ADD COLUMN origin TEXT")
+            self.conn.commit()
 
     def create_session(self, id: str, project: str, phase: str, created_at: str) -> None:
         self.conn.execute(
@@ -89,11 +100,11 @@ class SQLiteStore:
         )
         self.conn.commit()
 
-    def add_turn(self, session_id: str, phase: str, role: str, content: str, token_estimate: int) -> int:
+    def add_turn(self, session_id: str, phase: str, role: str, content: str, token_estimate: int, origin: Optional[str] = None) -> int:
         now = datetime.now().isoformat()
         cursor = self.conn.execute(
-            "INSERT INTO turns (session_id, phase, role, content, token_estimate, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-            (session_id, phase, role, content, token_estimate, now),
+            "INSERT INTO turns (session_id, phase, role, content, token_estimate, timestamp, origin) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (session_id, phase, role, content, token_estimate, now, origin),
         )
         self.conn.commit()
         return cursor.lastrowid

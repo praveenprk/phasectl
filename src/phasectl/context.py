@@ -34,6 +34,7 @@ def compress_tail(session_id: str, store, app_config: dict) -> str:
         role="system",
         content=summary_content,
         token_estimate=estimate_tokens(summary_content),
+        origin="compression",
     )
     return summary
 

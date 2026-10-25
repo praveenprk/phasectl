@@ -286,7 +286,7 @@ def build_resume_block(
     session_summary: str,
     agent_context: str,
     app_config: dict,
-) -> str:
+) -> tuple[dict, str]:
     sections: list[str] = []
     git_block = _format_git_for_prompt(git)
     if git_block:
@@ -297,7 +297,7 @@ def build_resume_block(
         sections.append(f"## Last coding-agent context (tail)\n{agent_context.strip()}")
 
     if not sections:
-        return ""
+        return (git or {}, "")
 
     payload = "\n\n".join(sections)
     try:
@@ -308,8 +308,6 @@ def build_resume_block(
             fallback.append(f"State: branch={git['branch']} dirty={git.get('dirty_count', 0)}")
         fallback.append(f"[synthesis error: {e}]")
         fallback.append(payload)
-        return "\n".join(fallback)
+        return (git or {}, "\n".join(fallback))
 
-    if git_block and synthesis:
-        return f"{git_block}\n\n{synthesis}".strip()
-    return synthesis or git_block
+    return (git or {}, synthesis)
