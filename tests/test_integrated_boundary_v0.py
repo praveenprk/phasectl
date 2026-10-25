@@ -141,7 +141,7 @@ def test_integrated_boundary_scenario_c_unavailable_observation(tmp_path, monkey
     assert result.exit_code == 0, result.output
     assert "CURRENT_GIT_STATE: unavailable" in result.output
     assert "branch=STALE-X" not in result.output.split("assistant reply", 1)[0]
-    assert any("STALE-X" in str(m.get("content", "")) for m in captured[0]) or True
+    assert any("CURRENT_GIT_STATE: unavailable" in str(m.get("content", "")) for m in captured[0])
 
 
 def test_integrated_boundary_scenario_d_explicit_spoofed_model_output(tmp_path, monkeypatch):

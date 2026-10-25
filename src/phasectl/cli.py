@@ -449,6 +449,7 @@ def start(
             resume_git_state, resume_synthesis = build_resume_block(git_state, session_summary, agent_context, config)
         except Exception as e:
             _diag(f"[orient] synthesis failed: {e}", quiet=quiet)
+            resume_git_state = git_state
             resume_synthesis = ""
 
     progress.step("opening session...")
@@ -665,7 +666,9 @@ def chat(
             content = _wrap_provenance(turn.get("origin"), content)
         messages.append({"role": role, "content": content})
 
-    if prior_session_memory:
+    if prior_session_memory and not any(
+        turn.get("origin") == "prior_session" for turn in turns
+    ):
         try:
             prior = load_prior_session(store, project)
             if prior:

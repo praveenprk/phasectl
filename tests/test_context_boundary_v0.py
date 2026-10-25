@@ -178,6 +178,39 @@ def test_prior_session_memory_enabled_retains_current_turns(tmp_path, monkeypatc
     assert any("PRIOR-TURN" in str(m.get("content", "")) for m in captured[0])
 
 
+def test_prior_session_memory_does_not_duplicate_start_injection(tmp_path, monkeypatch):
+    runner, calls, captured, repo_path, store = _chat_setup(
+        tmp_path, monkeypatch, {"branch": LIVE_BRANCH, "dirty": False, "dirty_count": 0}
+    )
+
+    prior_session = {
+        "id": "prior-session",
+        "final_summary": "PRIOR-SESSION-MEMORY",
+    }
+    prior_turns = [{"role": "assistant", "content": "PRIOR-TURN"}]
+    injected = build_injection_block(prior_session, prior_turns)
+    current_session = store.get_active_session("proj")
+    store.add_turn(
+        session_id=current_session["id"],
+        phase="orient",
+        role="system",
+        content=injected,
+        token_estimate=10,
+        origin="prior_session",
+    )
+    monkeypatch.setattr(
+        "phasectl.cli.load_prior_session",
+        lambda store, project: (prior_session, prior_turns),
+    )
+
+    result = runner.invoke(app, ["chat", "hello", "--prior-session-memory"])
+
+    assert result.exit_code == 0, result.output
+    contents = [str(m.get("content", "")) for m in captured[0]]
+    assert sum("PRIOR-SESSION-MEMORY" in content for content in contents) == 1
+    assert sum("PRIOR-TURN" in content for content in contents) == 1
+
+
 def test_chat_authoritative_git_state_output_boundary(tmp_path, monkeypatch):
     runner, calls, captured, repo_path, store = _chat_setup(
         tmp_path, monkeypatch, {"branch": LIVE_BRANCH, "dirty": False, "dirty_count": 0}
@@ -343,6 +376,42 @@ def test_start_unavailable_working_tree_status_displays_unavailable(tmp_path, mo
     assert result.exit_code == 0, result.output
     assert "unavailable dirty" in result.output
     assert "None dirty" not in result.output
+
+
+def test_start_preserves_git_state_when_resume_synthesis_fails(tmp_path, monkeypatch):
+    db_path = tmp_path / "sessions.db"
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+
+    monkeypatch.setattr(
+        "phasectl.cli._load_config",
+        lambda: {
+            "defaults": {"project": "proj"},
+            "storage": {"db_path": str(db_path)},
+            "projects": {"proj": {"index_path": str(repo_path)}},
+        },
+    )
+    monkeypatch.setattr("phasectl.cli.get_index_path", lambda project, config: repo_path)
+    monkeypatch.setattr(
+        "phasectl.cli.get_git_state",
+        lambda path: {
+            "branch": LIVE_BRANCH,
+            "dirty": True,
+            "dirty_count": 2,
+            "last_commit": {"hash": HEAD_COMMIT, "subject": "s", "when": "now"},
+        },
+    )
+
+    def fail_resume_block(*args):
+        raise RuntimeError("unexpected synthesis failure")
+
+    monkeypatch.setattr("phasectl.cli.build_resume_block", fail_resume_block)
+
+    result = CliRunner().invoke(app, ["start", "--phase", "orient"])
+
+    assert result.exit_code == 0, result.output
+    assert f"CURRENT_GIT_STATE: branch={LIVE_BRANCH} dirty=True dirty_count=2 head={HEAD_COMMIT}" in result.output
+    assert "[MODEL-DERIVED RESUME" not in result.output
 
 
 def test_chat_records_turn_origins(tmp_path, monkeypatch):
