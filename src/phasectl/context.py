@@ -34,15 +34,17 @@ def compress_tail(session_id: str, store, app_config: dict) -> str:
         role="system",
         content=summary_content,
         token_estimate=estimate_tokens(summary_content),
+        origin="compression",
     )
     return summary
 
 
-def build_injection_block(prior_session: dict, prior_turns: list[dict]) -> str:
+def build_injection_block(prior_session: dict | None, prior_turns: list[dict] | None) -> str:
     parts = []
-    summary = prior_session.get("final_summary")
-    if summary:
-        parts.append(f"Prior session summary:\n{summary}")
+    if prior_session:
+        summary = prior_session.get("final_summary")
+        if summary:
+            parts.append(f"Prior session summary:\n{summary}")
     if prior_turns:
         turn_lines = [f"[{t['role']}]: {t['content']}" for t in prior_turns]
         parts.append("Last turns from prior session:\n" + "\n".join(turn_lines))

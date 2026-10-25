@@ -408,7 +408,8 @@ def start(
     else:
         progress.step(f"no prior session for '{project}' — starting fresh...")
 
-    resume_block = ""
+    resume_git_state: dict = {}
+    resume_synthesis = ""
     if phase == "orient" and not no_fuse:
         session_summary = ""
         if prior:
@@ -423,7 +424,8 @@ def start(
                 git_state = get_git_state(repo_path)
                 branch = git_state.get("branch") or "detached"
                 dirty = git_state.get("dirty_count", 0)
-                progress.step(f"reading git state ({branch}, {dirty} dirty)...")
+                dirty_display = "unavailable" if dirty is None else dirty
+                progress.step(f"reading git state ({branch}, {dirty_display} dirty)...")
             except Exception as e:
                 _diag(f"[orient] git introspection skipped: {e}", quiet=quiet)
             try:
@@ -444,10 +446,11 @@ def start(
             progress.step(
                 f"synthesizing resume block via {_compression_label(config)}..."
             )
-            resume_block = build_resume_block(git_state, session_summary, agent_context, config)
+            resume_git_state, resume_synthesis = build_resume_block(git_state, session_summary, agent_context, config)
         except Exception as e:
             _diag(f"[orient] synthesis failed: {e}", quiet=quiet)
-            resume_block = ""
+            resume_git_state = git_state
+            resume_synthesis = ""
 
     progress.step("opening session...")
     if prior:
@@ -466,17 +469,19 @@ def start(
             role="system",
             content=injection,
             token_estimate=estimate_tokens(injection),
+            origin="prior_session",
         )
     else:
         session = open_session(store, project, phase)
 
-    if resume_block:
+    if resume_synthesis:
         store.add_turn(
             session_id=session.id,
             phase=phase,
             role="system",
-            content=resume_block,
-            token_estimate=estimate_tokens(resume_block),
+            content=resume_synthesis,
+            token_estimate=estimate_tokens(resume_synthesis),
+            origin="resume",
         )
 
     seed_paths = seed or []
@@ -494,12 +499,54 @@ def start(
                 role="system",
                 content=seed_block,
                 token_estimate=estimate_tokens(seed_block),
+                origin="seed",
             )
 
     progress.done()
-    if resume_block:
-        print(resume_block)
+    if resume_git_state.get("branch"):
+        dirty = resume_git_state.get("dirty_count", 0)
+        dirty_display = "unavailable" if dirty is None else dirty
+        head = (resume_git_state.get("last_commit") or {}).get("hash")
+        parts = [
+            f"branch={resume_git_state['branch']}",
+            f"dirty={'unavailable' if resume_git_state.get('dirty') is None else bool(resume_git_state.get('dirty'))}",
+            f"dirty_count={dirty_display}",
+        ]
+        if head:
+            parts.append(f"head={head}")
+        else:
+            parts.append("head=unavailable")
+        print("CURRENT_GIT_STATE: " + " ".join(parts))
+    elif resume_git_state:
+        print("CURRENT_GIT_STATE: unavailable")
+    if resume_synthesis:
+        print("[MODEL-DERIVED RESUME (non-authoritative)]")
+        print(resume_synthesis)
     print(f"session opened: {session.id[:8]} {phase}")
+
+
+_PROVENANCE_WRAPPERS = {
+    "prior_session": "[HISTORICAL CONTEXT: prior session (non-authoritative)]",
+    "resume": "[MODEL-DERIVED RESUME SYNTHESIS (non-authoritative)]",
+    "compression": "[MODEL-DERIVED COMPRESSED SUMMARY (non-authoritative)]",
+    "seed": "[SUPPLIED CONTEXT (not independently verified)]",
+}
+
+
+def _wrap_provenance(origin, content):
+    label = _PROVENANCE_WRAPPERS.get(origin)
+    if not label:
+        return content
+    return f"{label}\n{content}"
+
+
+def _is_prior_session_memory_turn(turn):
+    origin = turn.get("origin")
+    if origin == "prior_session":
+        return True
+    if origin is None and turn.get("role") == "system":
+        return True
+    return False
 
 
 @app.command()
@@ -510,6 +557,10 @@ def chat(
         help="Override the chat model for this single message. Wins over config.toml and the global --model.",
     ),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress the 'Compressing tail turns…' diagnostic on stderr."),
+    prior_session_memory: bool = typer.Option(
+        False, "--prior-session-memory/--no-prior-session-memory",
+        help="Include the most recent closed session's summary and tail turns as historical (non-authoritative) context.",
+    ),
 ):
     """Send a message in the active session and print the reply.
 
@@ -579,12 +630,64 @@ def chat(
             raise typer.Exit(2)
         turns = store.get_turns(session_data["id"])
 
+    repo_path_obj = get_index_path(project, config)
+    try:
+        git_state = get_git_state(repo_path_obj) if repo_path_obj else {}
+    except Exception:
+        git_state = {}
+    if git_state.get("branch"):
+        dirty = git_state.get("dirty", None)
+        dirty_count = git_state.get("dirty_count", None)
+        parts = [
+            f"branch={git_state['branch']}",
+            "dirty=" + ("unavailable" if dirty is None else str(bool(dirty))),
+            "dirty_count=" + ("unavailable" if dirty_count is None else str(dirty_count)),
+        ]
+        last_commit = git_state.get("last_commit", None)
+        head = last_commit.get("hash") if isinstance(last_commit, dict) else None
+        if head:
+            parts.append(f"head={head}")
+        else:
+            parts.append("head=unavailable")
+        current_git_state = "CURRENT_GIT_STATE: " + " ".join(parts)
+    else:
+        current_git_state = "CURRENT_GIT_STATE: unavailable"
+    print(current_git_state)
+
     messages = []
     for turn in turns:
         if turn["compressed"]:
             continue
+        if not prior_session_memory and _is_prior_session_memory_turn(turn):
+            continue
         role = "user" if turn["role"] == "system" else turn["role"]
-        messages.append({"role": role, "content": turn["content"]})
+        content = turn["content"]
+        if turn["role"] == "system":
+            content = _wrap_provenance(turn.get("origin"), content)
+        messages.append({"role": role, "content": content})
+
+    if prior_session_memory and not any(
+        turn.get("origin") == "prior_session" for turn in turns
+    ):
+        try:
+            prior = load_prior_session(store, project)
+            if prior:
+                injection = build_injection_block(prior[0], prior[1])
+                if injection and injection.strip():
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": _wrap_provenance(
+                                "prior_session",
+                                "Prior session memory (historical, optional):\n"
+                                + injection,
+                            ),
+                        }
+                    )
+        except Exception:
+            pass
+
+    messages.append({"role": "user", "content": current_git_state})
 
     messages.append({"role": "user", "content": full_message})
 
@@ -594,6 +697,7 @@ def chat(
         role="user",
         content=full_message,
         token_estimate=estimate_tokens(full_message),
+        origin="user",
     )
 
     provider_label = _provider_label(config)
@@ -635,6 +739,7 @@ def chat(
         role="assistant",
         content=response,
         token_estimate=estimate_tokens(response),
+        origin="assistant",
     )
 
     all_turns = store.get_turns(session_data["id"])

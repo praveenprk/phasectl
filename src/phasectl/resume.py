@@ -35,7 +35,10 @@ def get_git_state(repo_path: str) -> dict:
         state["branch"] = branch.strip()
 
     porcelain = _run_git(repo_path, ["status", "--porcelain"])
-    if porcelain is not None:
+    if porcelain is None:
+        state["dirty"] = None
+        state["dirty_count"] = None
+    else:
         lines = [line for line in porcelain.splitlines() if line.strip()]
         state["dirty"] = bool(lines)
         state["dirty_count"] = len(lines)
@@ -53,7 +56,9 @@ def get_git_state(repo_path: str) -> dict:
         state["diffstat"] = "\n".join(stat_lines)
 
     last = _run_git(repo_path, ["log", "-1", "--format=%h|%s|%cr"])
-    if last and last.strip():
+    if last is None:
+        state["last_commit"] = None
+    elif last.strip():
         parts = last.strip().split("|", 2)
         if len(parts) == 3:
             state["last_commit"] = {
@@ -61,6 +66,10 @@ def get_git_state(repo_path: str) -> dict:
                 "subject": parts[1],
                 "when": parts[2],
             }
+        else:
+            state["last_commit"] = None
+    else:
+        state["last_commit"] = None
 
     return state
 
@@ -277,7 +286,7 @@ def build_resume_block(
     session_summary: str,
     agent_context: str,
     app_config: dict,
-) -> str:
+) -> tuple[dict, str]:
     sections: list[str] = []
     git_block = _format_git_for_prompt(git)
     if git_block:
@@ -288,15 +297,17 @@ def build_resume_block(
         sections.append(f"## Last coding-agent context (tail)\n{agent_context.strip()}")
 
     if not sections:
-        return ""
+        return (git or {}, "")
 
     payload = "\n\n".join(sections)
     try:
-        return compress(payload, app_config, system_prompt=_SYNTHESIS_PROMPT).strip()
+        synthesis = compress(payload, app_config, system_prompt=_SYNTHESIS_PROMPT).strip()
     except Exception as e:
         fallback = ["Resume here: (synthesis unavailable — raw signals below)"]
         if git.get("branch"):
             fallback.append(f"State: branch={git['branch']} dirty={git.get('dirty_count', 0)}")
         fallback.append(f"[synthesis error: {e}]")
         fallback.append(payload)
-        return "\n".join(fallback)
+        return (git or {}, "\n".join(fallback))
+
+    return (git or {}, synthesis)
