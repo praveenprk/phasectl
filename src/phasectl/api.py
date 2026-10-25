@@ -1,6 +1,6 @@
 from .provider import DEFAULT_COMPRESS_PROMPT, get_provider
 from .tools import ToolExecutor
-from .graph import GraphStore
+from .graph import GraphStore, extract_decision_references
 from .config import get_graph_path
 
 
@@ -76,7 +76,7 @@ def compress(turns_text: str, app_config: dict, system_prompt: str | None = None
 def extract_rfcs_and_decisions(summary: str) -> tuple[list[str], list[str]]:
     import re
     rfcs = [f"RFC-{m}" for m in re.findall(r"RFC-(\d+)", summary)]
-    decisions = [f"DECISION-{m}" for m in re.findall(r"DECISION-(\d+)", summary)]
+    decisions = extract_decision_references(summary)
     return rfcs, decisions
 
 

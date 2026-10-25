@@ -20,6 +20,7 @@ from .api import (
     chat as api_chat,
     compress as api_compress,
     persist_session_graph,
+    extract_decision_references,
     extract_rfcs_and_decisions,
 )
 from .config import (
@@ -847,6 +848,29 @@ def close(
         progress.done()
         print(f"Compression failed: {e}", file=sys.stderr)
         raise typer.Exit(2)
+
+    source_references = list(dict.fromkeys(
+        reference
+        for turn in turns
+        for reference in extract_decision_references(turn["content"])
+    ))
+    summary_references = set(extract_decision_references(summary))
+    missing_references = [
+        reference for reference in source_references
+        if reference not in summary_references
+    ]
+    if missing_references:
+        print(
+            "Recovered decision references missing from generated summary: "
+            + ", ".join(missing_references),
+            file=sys.stderr,
+        )
+        appendix = (
+            "Decision references recovered from original turns (historical "
+            "occurrence only; not acceptance, implementation, or verification):\n"
+            + "\n".join(f"- {reference}" for reference in missing_references)
+        )
+        summary = f"{summary}\n\n{appendix}"
 
     all_turns = store.get_turns(session_data["id"])
     total_tokens = sum(t["token_estimate"] for t in all_turns)

@@ -7,6 +7,87 @@ from typing import Any
 import networkx as nx
 
 
+_DECISION_REFERENCE_RE = re.compile(
+    r"(?<![\w-])DECISION-[A-Z0-9]+(?:-[A-Z0-9]+)*(?![\w-])"
+)
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+
+
+def _strip_inline_code(text: str) -> str:
+    visible = []
+    i = 0
+    while i < len(text):
+        if text[i] != "`":
+            visible.append(text[i])
+            i += 1
+            continue
+
+        opening_end = i
+        while opening_end < len(text) and text[opening_end] == "`":
+            opening_end += 1
+        delimiter_length = opening_end - i
+        search_from = opening_end
+
+        while search_from < len(text):
+            closing_start = text.find("`", search_from)
+            if closing_start == -1:
+                break
+            closing_end = closing_start
+            while closing_end < len(text) and text[closing_end] == "`":
+                closing_end += 1
+            if closing_end - closing_start == delimiter_length:
+                visible.append(" ")
+                i = closing_end
+                break
+            search_from = closing_end
+        else:
+            visible.append(text[i:opening_end])
+            i = opening_end
+            continue
+
+        if closing_start == -1:
+            visible.append(text[i:opening_end])
+            i = opening_end
+
+    return "".join(visible)
+
+
+def _visible_prose(text: str) -> str:
+    visible = []
+    fence_char = ""
+    fence_length = 0
+
+    for line in text.splitlines(keepends=True):
+        match = _FENCE_RE.match(line.rstrip("\r\n"))
+        if fence_char:
+            if (
+                match
+                and match.group(1)[0] == fence_char
+                and len(match.group(1)) >= fence_length
+                and not match.group(2).strip()
+            ):
+                fence_char = ""
+                fence_length = 0
+            visible.append("\n")
+            continue
+
+        if match:
+            fence_char = match.group(1)[0]
+            fence_length = len(match.group(1))
+            visible.append("\n")
+            continue
+
+        visible.append(line)
+
+    return _strip_inline_code("".join(visible))
+
+
+def extract_decision_references(text: str) -> list[str]:
+    """Return standalone decision IDs from prose, in first-occurrence order."""
+    references = _DECISION_REFERENCE_RE.findall(_visible_prose(text))
+    return list(dict.fromkeys(references))
+
+
 class GraphStore:
     """JSON-backed NetworkX MultiDiGraph.
 
@@ -152,8 +233,7 @@ class GraphStore:
 
     def extract_rfcs_and_decisions(self, summary: str) -> tuple[list[str], list[str]]:
         rfcs = re.findall(r"RFC-\d+", summary)
-        decisions = re.findall(r"DECISION-\d+", summary)
-        return list(dict.fromkeys(rfcs)), list(dict.fromkeys(decisions))
+        return list(dict.fromkeys(rfcs)), extract_decision_references(summary)
 
     def close(self) -> None:
         pass
