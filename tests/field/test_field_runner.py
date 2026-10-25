@@ -311,6 +311,12 @@ def test_field_runner() -> None:
     except Exception as error:
         report["status"] = "failed"
         report["error"] = f"{type(error).__name__}: {error}"
+        try:
+            after = _repository_state(repo)
+            report["repository_after"] = after
+            report["repository_unchanged"] = after == before
+        except Exception as verification_error:
+            report["repository_verification_error"] = f"{type(verification_error).__name__}: {verification_error}"
         raise
     finally:
         report["duration_seconds"] = round(time.monotonic() - started, 3)
