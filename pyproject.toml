@@ -48,3 +48,6 @@ phasectl = "phasectl.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/phasectl"]
+
+[tool.pytest.ini_options]
+norecursedirs = ["*.egg-info", ".*", "build", "dist", "tests/field"]

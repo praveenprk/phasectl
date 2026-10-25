@@ -8,6 +8,7 @@ build/
 dist/
 .DS_Store
 .pytest_cache/
+.field-test/
 .mypy_cache/
 .ruff_cache/
 .coverage
