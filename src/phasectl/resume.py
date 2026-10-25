@@ -292,7 +292,7 @@ def build_resume_block(
 
     payload = "\n\n".join(sections)
     try:
-        return compress(payload, app_config, system_prompt=_SYNTHESIS_PROMPT).strip()
+        synthesis = compress(payload, app_config, system_prompt=_SYNTHESIS_PROMPT).strip()
     except Exception as e:
         fallback = ["Resume here: (synthesis unavailable — raw signals below)"]
         if git.get("branch"):
@@ -300,3 +300,7 @@ def build_resume_block(
         fallback.append(f"[synthesis error: {e}]")
         fallback.append(payload)
         return "\n".join(fallback)
+
+    if git_block and synthesis:
+        return f"{git_block}\n\n{synthesis}".strip()
+    return synthesis or git_block
