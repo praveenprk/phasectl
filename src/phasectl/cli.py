@@ -423,7 +423,8 @@ def start(
                 git_state = get_git_state(repo_path)
                 branch = git_state.get("branch") or "detached"
                 dirty = git_state.get("dirty_count", 0)
-                progress.step(f"reading git state ({branch}, {dirty} dirty)...")
+                dirty_display = "unavailable" if dirty is None else dirty
+                progress.step(f"reading git state ({branch}, {dirty_display} dirty)...")
             except Exception as e:
                 _diag(f"[orient] git introspection skipped: {e}", quiet=quiet)
             try:
@@ -502,6 +503,14 @@ def start(
     print(f"session opened: {session.id[:8]} {phase}")
 
 
+def _is_prior_session_memory_turn(turn):
+    content = turn.get("content", "") or ""
+    return (
+        "Prior session summary:" in content
+        or "Last turns from prior session:" in content
+    )
+
+
 @app.command()
 def chat(
     message: str = typer.Argument(..., help="Message to send. Wrap in quotes for anything longer than one word."),
@@ -510,6 +519,10 @@ def chat(
         help="Override the chat model for this single message. Wins over config.toml and the global --model.",
     ),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress the 'Compressing tail turns…' diagnostic on stderr."),
+    prior_session_memory: bool = typer.Option(
+        False, "--prior-session-memory/--no-prior-session-memory",
+        help="Include the most recent closed session's summary and tail turns as historical (non-authoritative) context.",
+    ),
 ):
     """Send a message in the active session and print the reply.
 
@@ -579,12 +592,56 @@ def chat(
             raise typer.Exit(2)
         turns = store.get_turns(session_data["id"])
 
+    repo_path_obj = get_index_path(project, config)
+    try:
+        git_state = get_git_state(repo_path_obj) if repo_path_obj else {}
+    except Exception:
+        git_state = {}
+    if git_state.get("branch"):
+        dirty = git_state.get("dirty", None)
+        dirty_count = git_state.get("dirty_count", None)
+        parts = [
+            f"branch={git_state['branch']}",
+            "dirty=" + ("unavailable" if dirty is None else str(bool(dirty))),
+            "dirty_count=" + ("unavailable" if dirty_count is None else str(dirty_count)),
+        ]
+        last_commit = git_state.get("last_commit", None)
+        head = last_commit.get("hash") if isinstance(last_commit, dict) else None
+        if head:
+            parts.append(f"head={head}")
+        else:
+            parts.append("head=unavailable")
+        current_git_state = "CURRENT_GIT_STATE: " + " ".join(parts)
+    else:
+        current_git_state = "CURRENT_GIT_STATE: unavailable"
+    print(current_git_state)
+
     messages = []
     for turn in turns:
         if turn["compressed"]:
             continue
+        if not prior_session_memory and _is_prior_session_memory_turn(turn):
+            continue
         role = "user" if turn["role"] == "system" else turn["role"]
         messages.append({"role": role, "content": turn["content"]})
+
+    messages.append({"role": "user", "content": current_git_state})
+
+    if prior_session_memory:
+        try:
+            prior = load_prior_session(store, project)
+            if prior:
+                injection = build_injection_block(prior[0], prior[1])
+                if injection and injection.strip():
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": "Prior session memory (historical, optional):\n"
+                            + injection,
+                        }
+                    )
+        except Exception:
+            pass
 
     messages.append({"role": "user", "content": full_message})
 

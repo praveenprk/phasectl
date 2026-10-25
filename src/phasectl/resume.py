@@ -35,7 +35,10 @@ def get_git_state(repo_path: str) -> dict:
         state["branch"] = branch.strip()
 
     porcelain = _run_git(repo_path, ["status", "--porcelain"])
-    if porcelain is not None:
+    if porcelain is None:
+        state["dirty"] = None
+        state["dirty_count"] = None
+    else:
         lines = [line for line in porcelain.splitlines() if line.strip()]
         state["dirty"] = bool(lines)
         state["dirty_count"] = len(lines)
@@ -53,7 +56,9 @@ def get_git_state(repo_path: str) -> dict:
         state["diffstat"] = "\n".join(stat_lines)
 
     last = _run_git(repo_path, ["log", "-1", "--format=%h|%s|%cr"])
-    if last and last.strip():
+    if last is None:
+        state["last_commit"] = None
+    elif last.strip():
         parts = last.strip().split("|", 2)
         if len(parts) == 3:
             state["last_commit"] = {
@@ -61,6 +66,10 @@ def get_git_state(repo_path: str) -> dict:
                 "subject": parts[1],
                 "when": parts[2],
             }
+        else:
+            state["last_commit"] = None
+    else:
+        state["last_commit"] = None
 
     return state
 
