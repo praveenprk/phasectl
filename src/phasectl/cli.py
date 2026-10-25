@@ -797,8 +797,9 @@ def close(
 ):
     """Close the active session and produce a snapshot summary.
 
-    All uncompressed turns are handed to the 'snapshot' phase prompt via
-    the compression model. The resulting summary is stored on the session
+    All original turns are handed to the 'snapshot' phase prompt via the
+    compression model; synthetic compression-summary turns are excluded.
+    The resulting summary is stored on the session
     row, and any RFC-<n> / DECISION-<n> tokens found in it are linked into
     the local session graph (~/.config/phasectl/graph.json).
 
@@ -820,7 +821,11 @@ def close(
     current_phase = _derive_current_phase(store, session_data)
     snapshot_phase = load_phase("snapshot")
 
-    turns = store.get_uncompressed_turns(session_data["id"])
+    turns = [
+        turn
+        for turn in store.get_turns(session_data["id"])
+        if turn["phase"] != "_compression"
+    ]
     turn_texts = [
         f"[{t['phase']}][{t['role']}]: {t['content']}" for t in turns
     ]
