@@ -524,6 +524,21 @@ def start(
     print(f"session opened: {session.id[:8]} {phase}")
 
 
+_PROVENANCE_WRAPPERS = {
+    "prior_session": "[HISTORICAL CONTEXT: prior session (non-authoritative)]",
+    "resume": "[MODEL-DERIVED RESUME SYNTHESIS (non-authoritative)]",
+    "compression": "[MODEL-DERIVED COMPRESSED SUMMARY (non-authoritative)]",
+    "seed": "[SUPPLIED CONTEXT (not independently verified)]",
+}
+
+
+def _wrap_provenance(origin, content):
+    label = _PROVENANCE_WRAPPERS.get(origin)
+    if not label:
+        return content
+    return f"{label}\n{content}"
+
+
 def _is_prior_session_memory_turn(turn):
     origin = turn.get("origin")
     if origin == "prior_session":
@@ -645,9 +660,10 @@ def chat(
         if not prior_session_memory and _is_prior_session_memory_turn(turn):
             continue
         role = "user" if turn["role"] == "system" else turn["role"]
-        messages.append({"role": role, "content": turn["content"]})
-
-    messages.append({"role": "user", "content": current_git_state})
+        content = turn["content"]
+        if turn["role"] == "system":
+            content = _wrap_provenance(turn.get("origin"), content)
+        messages.append({"role": role, "content": content})
 
     if prior_session_memory:
         try:
@@ -658,12 +674,17 @@ def chat(
                     messages.append(
                         {
                             "role": "user",
-                            "content": "Prior session memory (historical, optional):\n"
-                            + injection,
+                            "content": _wrap_provenance(
+                                "prior_session",
+                                "Prior session memory (historical, optional):\n"
+                                + injection,
+                            ),
                         }
                     )
         except Exception:
             pass
+
+    messages.append({"role": "user", "content": current_git_state})
 
     messages.append({"role": "user", "content": full_message})
 
