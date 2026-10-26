@@ -21,12 +21,20 @@ Using a local model via **Ollama**? Skip `phasectl auth set` — Ollama is
 keyless. See [Swap providers](#swap-providers) for the two-line config change.
 
 Optional — install a code indexer if you want `phasectl index/query` and the
-`impl`/`validate` tool loop. The default indexer is
-[CodeGraph](https://github.com/colbymchenry/codegraph) (npm package):
+`impl`/`validate` tool loop. The default indexer is **phasedex**, phasectl's
+own native C++ indexer (no Node, no npm, no interpreter runtime — see
+`docs/internal/NATIVE_INDEXER_PLAN.md`). No packaged release yet; build from
+source:
 
 ```sh
-npm i -g @colbymchenry/codegraph      # or any binary on PATH with index/query subcommands
+cmake -S indexer -B indexer/build
+cmake --build indexer/build
+cmake --install indexer/build      # installs to /usr/local/bin by default
 ```
+
+A Homebrew formula also exists at `indexer/packaging/homebrew/phasedex.rb`
+(HEAD-only for now — no tap or release tag yet, see the formula's header
+comment for the exact `brew install --HEAD` invocation).
 
 phasectl shells out to the indexer binary directly — `<binary> index <path>`
 and `<binary> query <term>` — no MCP, no server, no protocol handshake. The
@@ -38,11 +46,11 @@ default indexer binary is configured in `[tools].indexer_command` (see
 ```sh
 # one-time setup
 uv tool install phasectl
-npm i -g @colbymchenry/codegraph
+# install phasedex (or another indexer) — see Install above
 phasectl auth set                                 # skip if using Ollama
 
 # per-project
-phasectl index --project myproject --path .        # builds the CodeGraph index
+phasectl index --project myproject --path .        # builds the index
 phasectl check --project myproject                  # confirm every subsystem is green
 
 # a session
@@ -60,7 +68,7 @@ phasectl loose  --project myproject
 ```
 
 `phasectl check` reports pass/fail for every subsystem before you spend a
-turn on the API — its `indexer` row confirms the configured binary (CodeGraph
+turn on the API — its `indexer` row confirms the configured binary (phasedex
 by default) is on `PATH`. In `impl`/`validate`, `phasectl chat` lets the model
 call `search_symbols`, which shells straight out to that binary — you'll see
 `[tool call] search_symbols(...)` on stderr as it happens. `phasectl loose`
@@ -147,16 +155,19 @@ and the impl/validate tool loop. No MCP, no server, no protocol handshake.
 
 ```toml
 [tools]
-indexer_command = "codegraph"   # default; change to swap indexers
+indexer_command = "phasedex"   # default; change to swap indexers
 ```
 
 Any binary that supports `index <path>` and `query <term>` subcommands
 works. Known-compatible:
 
-- [CodeGraph](https://github.com/colbymchenry/codegraph) — the default
-  indexer binary (`npm i -g @colbymchenry/codegraph`). First index on a
-  project calls `init` under the hood if the project hasn't been indexed
-  before; later runs call `index` directly.
+- **phasedex** — the default indexer binary, phasectl's own native C++
+  indexer (build from source, see [Install](#install)). `index` is
+  idempotent and self-initializing — no separate init step.
+- [CodeGraph](https://github.com/colbymchenry/codegraph) — `npm i -g
+  @colbymchenry/codegraph`. First index on a project calls `init` under
+  the hood if the project hasn't been indexed before; later runs call
+  `index` directly.
 - Any indexer that indexes externally: use
   `phasectl index --project <name> --path <dir> --register-only` to record the
   path without invoking the binary.
@@ -219,7 +230,7 @@ path = ""                 # empty = ~/.config/phasectl/graph.json
 projects_dir = ""         # override auto-detected coding-agent transcript dir
 
 [tools]
-indexer_command = "codegraph"
+indexer_command = "phasedex"
 
 [projects.myproject]
 index_path = "/abs/path/to/myproject"   # written by 'phasectl index'

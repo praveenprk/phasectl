@@ -31,7 +31,7 @@ phasectl/
 ## Data flow
 
 ```
-User runs: phasectl start --project contextos --phase orient
+User runs: phasectl start --project myproject --phase orient
    │
    ├─ cli.py: load config from XDG config (~/.config/phasectl/config.toml)
    ├─ cli.py: check for active session (error if exists)
@@ -176,7 +176,7 @@ compression_model = "claude-haiku-4-5-20251001"
 db_path = ""   # empty = XDG default (~/.config/phasectl/sessions.db)
 
 [defaults]
-project = "contextos"
+project = "myproject"
 window_tokens = 15000
 keep_last_turns = 3
 ```

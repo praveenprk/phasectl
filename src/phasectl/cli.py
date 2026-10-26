@@ -193,8 +193,8 @@ projects_dir = ""
 [tools]
 # Indexer binary invoked directly (no MCP, no protocol) for `phasectl index`,
 # `phasectl query`, and the impl/validate tool loop. Swap the command to
-# swap indexers.
-indexer_command = "codegraph"
+# swap indexers — e.g. "codegraph" (npm i -g @colbymchenry/codegraph).
+indexer_command = "phasedex"
 
 # Per-project index paths are written here by `phasectl index`:
 # [projects.myproject]
@@ -959,7 +959,7 @@ def status(
 def _indexer_binary_from_config(config: dict) -> str:
     raw = ((config.get("tools") or {}).get("indexer_command") or "").strip()
     if not raw:
-        raw = "codegraph"
+        raw = "phasedex"
     tokens = shlex.split(raw)
     return tokens[0] if tokens else ""
 
@@ -967,11 +967,12 @@ def _indexer_binary_from_config(config: dict) -> str:
 def _run_index(binary: str, path: str) -> subprocess.CompletedProcess:
     """Invoke `<binary> index <path>`, falling back to `init` on first run.
 
-    Verified against CodeGraph (the default indexer): `index` rebuilds an
-    already-initialized project but exits 1 with "not initialized" on a
-    fresh one, where `init` builds the graph from scratch in one step.
-    Binaries without that two-step distinction just succeed on the first
-    `index` call and never hit the fallback.
+    phasedex (the default indexer) is self-initializing — `index` always
+    succeeds, this fallback never triggers. Kept for CodeGraph
+    (github.com/colbymchenry/codegraph), an optional swap-in indexer whose
+    `index` rebuilds an already-initialized project but exits 1 with "not
+    initialized" on a fresh one, where `init` builds the graph from
+    scratch in one step.
     """
     proc = subprocess.run(
         [binary, "index", path],
@@ -988,9 +989,9 @@ def _run_index(binary: str, path: str) -> subprocess.CompletedProcess:
 def _summarize_index(binary: str, path: str, stdout: str) -> str:
     """Best-effort human summary of an index run.
 
-    Tries `<binary> status <path> --json` first (CodeGraph's own summary
-    of the index it just built); falls back to parsing the index
-    command's own stdout for binaries without a status subcommand.
+    Tries `<binary> status <path> --json` first (both phasedex and
+    CodeGraph support this); falls back to parsing the index command's
+    own stdout for binaries without a status subcommand.
     """
     try:
         status_proc = subprocess.run(
@@ -1058,7 +1059,7 @@ def index(
     """Index a project so 'phasectl query' and the impl/validate tools can find its symbols.
 
     Resolves the indexer binary from tools.indexer_command in config.toml
-    (first token, e.g. 'codegraph' from 'codegraph') and invokes
+    (first token, e.g. 'phasedex' from 'phasedex') and invokes
     `<binary> index <abs_path>` as a plain subprocess — no MCP, no
     protocol handshake. The resolved path is written to config.toml at
     projects.<name>.index_path.
@@ -1417,7 +1418,7 @@ def check(
     # indexer — the configured indexer binary is found on PATH
     try:
         import shutil
-        raw_cmd = (config.get("tools") or {}).get("indexer_command", "") or "codegraph"
+        raw_cmd = (config.get("tools") or {}).get("indexer_command", "") or "phasedex"
         cmd = shlex.split(raw_cmd)
         binary_path = shutil.which(cmd[0]) if cmd else None
         if binary_path:
