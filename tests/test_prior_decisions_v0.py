@@ -5,9 +5,10 @@ DECISION references in the snapshot, but the default resume path routes them
 through the orient synthesis (a model rewrite) and hides the prior-session
 turn, so session 2 lost the decisions in 5/6 trials.
 
-Contract:
+Contract (now specified by SPEC-002; source moved from the model-written
+snapshot to the prior session's stored turns, DECISION-006):
 - `start` stores a CLI-owned PRIOR_DECISIONS turn built from the last closed
-  snapshot: only the lines that carry decision references, verbatim.
+  session's turns: only the lines that carry decision references, verbatim.
 - It is explicit when there is nothing to carry (unavailable / none recorded)
   so the model has no gap to fill.
 - `chat` sends it by default, while still excluding the rest of the prior
@@ -18,7 +19,8 @@ Contract:
 from typer.testing import CliRunner
 
 from phasectl.cli import app
-from phasectl.context import build_prior_decisions_block
+from phasectl.context import estimate_tokens
+from phasectl.handoff import build_prior_decisions_block
 from phasectl.session import open_session
 from phasectl.store import SQLiteStore
 
@@ -27,37 +29,41 @@ SUMMARY = (
     "**Decisions:**\n\n"
     "* Use SQLite for storage (DECISION-001)\n"
     "* Store amounts as integer cents (DECISION-002)\n\n"
-    "Some unrelated prose that must stay out: PRIOR-SESSION-PROSE.\n"
+    "Some unrelated prose without references: UNRELATED-PROSE.\n"
     "```\nDECISION-999 inside a code fence\n```\n"
 )
 
 
+def _user(content):
+    return {"role": "user", "origin": "user", "phase": "design", "content": content}
+
+
 def test_block_carries_verbatim_decision_lines_only():
-    block = build_prior_decisions_block({"id": "abcdef0123", "final_summary": SUMMARY})
+    block = build_prior_decisions_block({"id": "abcdef0123"}, [_user(SUMMARY)])
 
     assert block.startswith("PRIOR_DECISIONS")
     assert "abcdef01" in block
-    assert "- Use SQLite for storage (DECISION-001)" in block
-    assert "- Store amounts as integer cents (DECISION-002)" in block
-    assert "PRIOR-SESSION-PROSE" not in block
+    assert "- [user] Use SQLite for storage (DECISION-001)" in block
+    assert "- [user] Store amounts as integer cents (DECISION-002)" in block
+    assert "UNRELATED-PROSE" not in block
     assert "DECISION-999" not in block
     assert "not verified" in block
 
 
 def test_block_deduplicates_lines_and_keeps_first_occurrence_order():
     summary = "DECISION-002 and DECISION-001 together.\nLater: DECISION-001 again.\n"
-    block = build_prior_decisions_block({"id": "s1", "final_summary": summary})
+    block = build_prior_decisions_block({"id": "s1"}, [_user(summary), _user(summary)])
 
     lines = [l for l in block.splitlines() if l.startswith("- ")]
-    assert lines == ["- DECISION-002 and DECISION-001 together."]
+    assert lines == ["- [user] DECISION-002 and DECISION-001 together.", "- [user] Later: DECISION-001 again."]
 
 
 def test_block_is_explicit_when_nothing_to_carry():
-    assert build_prior_decisions_block(None) == (
+    assert build_prior_decisions_block(None, None) == (
         "PRIOR_DECISIONS: unavailable (no closed session for this project)"
     )
-    assert build_prior_decisions_block({"id": "s1", "final_summary": "no refs here"}) == (
-        "PRIOR_DECISIONS: none recorded in last session snapshot (s1)"
+    assert build_prior_decisions_block({"id": "s1"}, [_user("no refs here")]) == (
+        "PRIOR_DECISIONS: none recorded in session s1"
     )
 
 
@@ -71,9 +77,10 @@ def _config(tmp_path, db_path):
     }
 
 
-def _close_prior(store, summary):
+def _close_prior(store, content):
     prior = open_session(store, "proj", "design")
-    store.close_session(prior.id, "design", summary, 10)
+    store.add_turn(prior.id, "design", "user", content, estimate_tokens(content), origin="user")
+    store.close_session(prior.id, "design", "model prose: PRIOR-SESSION-PROSE", 10)
     return prior
 
 
@@ -92,7 +99,7 @@ def test_start_stores_and_prints_prior_decisions(tmp_path, monkeypatch):
     result = CliRunner().invoke(app, ["start", "--phase", "design"])
 
     assert result.exit_code == 0, result.output
-    assert "- Use SQLite for storage (DECISION-001)" in result.output
+    assert "- [user] Use SQLite for storage (DECISION-001)" in result.output
     active = store.get_active_session("proj")
     turns = store.get_turns(active["id"])
     stored = [t for t in turns if t["origin"] == "prior_decisions"]
@@ -149,7 +156,6 @@ def test_close_carries_decisions_into_next_snapshot(tmp_path, monkeypatch):
     _close_prior(store, SUMMARY)
     repo, config = _config(tmp_path, db_path)
     monkeypatch.setattr("phasectl.cli._load_config", lambda: config)
-    monkeypatch.setattr("phasectl.cli.api_compress", lambda *a, **k: "model summary with no refs")
 
     runner = CliRunner()
     assert runner.invoke(app, ["start", "--phase", "design"]).exit_code == 0

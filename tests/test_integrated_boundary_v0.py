@@ -62,7 +62,8 @@ def test_integrated_boundary_scenario_a_fresh_observation_defeats_stale_history(
     monkeypatch.setattr("phasectl.api.compress", lambda *a, **k: "STALE: revision X remains current")
     monkeypatch.setattr("phasectl.context.api_compress", lambda *a, **k: "STALE: revision X remains current")
     monkeypatch.setattr("phasectl.cli.api_compress", lambda *a, **k: "STALE: revision X remains current")
-    start_y = runner.invoke(app, ["start", "--phase", "orient"])
+    # The model resume is opt-in since DECISION-006; opt in to test the boundary.
+    start_y = runner.invoke(app, ["start", "--phase", "orient", "--summarize"])
 
     assert start_y.exit_code == 0, start_y.output
     deterministic = start_y.output.split("[MODEL-DERIVED", 1)[0]

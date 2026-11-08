@@ -51,58 +51,35 @@ def summarize_seed(path: str, text: str, truncated: bool, config: dict) -> str:
         header += f"; TRUNCATED to first {MAX_BYTES // 1000}KB of larger file"
     header += "]"
     payload = f"{header}\n\n{text}"
-    try:
-        gist = compress(payload, config, system_prompt=SEED_SYSTEM_PROMPT).strip()
-    except Exception:
-        return ""
-    return gist
+    # Opt-in only (`start --summarize`); errors propagate to the caller.
+    return compress(payload, config, system_prompt=SEED_SYSTEM_PROMPT).strip()
 
 
-def build_seed_block(
+def load_seed_files(
     paths: list[str],
-    config: dict,
     diag: Callable[[str], None] = _diag_noop,
-) -> str:
-    if not paths:
-        return ""
-
-    sections: list[str] = []
-    used = 0
-    skipped = 0
-    for p in paths:
+) -> list[tuple[str, str, str, bool]]:
+    """Usable seed files as (path, basename, text, truncated). Unusable ones are reported and skipped."""
+    loaded = []
+    for p in paths or []:
         if not os.path.isfile(p):
             diag(f"[seed] missing: {p}")
-            skipped += 1
             continue
         ext = os.path.splitext(p)[1].lower()
         if ext not in SUPPORTED_EXTS:
             diag(f"[seed] unsupported ext {ext}: {p} (supported: {sorted(SUPPORTED_EXTS)})")
-            skipped += 1
             continue
-
         text, truncated = load_seed(p)
         if not text:
             diag(f"[seed] empty or unreadable: {p}")
-            skipped += 1
             continue
+        loaded.append((p, os.path.basename(p), text, truncated))
+    return loaded
 
-        gist = summarize_seed(p, text, truncated, config)
-        if not gist:
-            diag(f"[seed] compression failed: {p}")
-            skipped += 1
-            continue
 
-        header = f"## {os.path.basename(p)}"
-        if truncated:
-            header += "  (truncated)"
-        sections.append(f"{header}\n{gist}")
-        used += 1
-
-    if not sections:
-        if paths:
-            diag(f"[seed] no seed files usable ({skipped} skipped)")
-        return ""
-
-    diag(f"seeded: {used} file{'s' if used != 1 else ''}"
-         + (f" ({skipped} skipped)" if skipped else ""))
-    return "# Seeded context\n\n" + "\n\n".join(sections)
+def seed_turn_text(basename: str, text: str, truncated: bool) -> str:
+    """SPEC-002 `seed` turn: the file verbatim, with any size cut stated."""
+    header = f"SEED {basename} (supplied, verbatim; not verified"
+    if truncated:
+        header += f"; TRUNCATED to first {MAX_BYTES // 1000}KB"
+    return f"{header}):\n{text}"

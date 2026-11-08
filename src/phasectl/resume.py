@@ -300,14 +300,8 @@ def build_resume_block(
         return (git or {}, "")
 
     payload = "\n\n".join(sections)
-    try:
-        synthesis = compress(payload, app_config, system_prompt=_SYNTHESIS_PROMPT).strip()
-    except Exception as e:
-        fallback = ["Resume here: (synthesis unavailable — raw signals below)"]
-        if git.get("branch"):
-            fallback.append(f"State: branch={git['branch']} dirty={git.get('dirty_count', 0)}")
-        fallback.append(f"[synthesis error: {e}]")
-        fallback.append(payload)
-        return (git or {}, "\n".join(fallback))
-
+    # Opt-in only (`start --summarize`, DECISION-006). Errors propagate so the
+    # caller stores nothing for a failed synthesis (SPEC-002 INV-002-09); the
+    # verbatim inputs are already stored as their own turns.
+    synthesis = compress(payload, app_config, system_prompt=_SYNTHESIS_PROMPT).strip()
     return (git or {}, synthesis)

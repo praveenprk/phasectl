@@ -20,13 +20,16 @@ from .context import (
     should_compress,
     compress_tail,
     build_injection_block,
+)
+from .handoff import (
     build_prior_decisions_block,
+    build_prior_turns_block,
+    build_snapshot,
 )
 from .api import (
     chat as api_chat,
     compress as api_compress,
     persist_session_graph,
-    extract_decision_references,
     extract_rfcs_and_decisions,
 )
 from .config import (
@@ -50,7 +53,7 @@ from .loose import (
     resolve_repo as loose_resolve_repo,
     synthesize_top_line as loose_synthesize_top_line,
 )
-from .seed import build_seed_block
+from .seed import load_seed_files, seed_turn_text, summarize_seed
 from .auth import AuthError, key_source, save_api_key, remove_api_key
 from .progress import Progress
 
@@ -358,6 +361,22 @@ def _derive_current_phase(store: SQLiteStore, session_data: dict) -> str:
     return session_data["opening_phase"]
 
 
+def _warn(msg: str) -> None:
+    """Warnings and failures of opt-in model steps print even under --quiet (DECISION-006)."""
+    print(msg, file=sys.stderr)
+
+
+def _store_system_turn(store, session_id: str, phase: str, content: str, origin: str) -> None:
+    store.add_turn(
+        session_id=session_id,
+        phase=phase,
+        role="system",
+        content=content,
+        token_estimate=estimate_tokens(content),
+        origin=origin,
+    )
+
+
 @app.command()
 def start(
     project: str = typer.Option(None, "--project", "-p", help="Project name; scopes sessions, index path, and graph. Defaults to defaults.project from config."),
@@ -367,7 +386,10 @@ def start(
         False, "--no-fuse", help="Skip the orient-phase fusion of git state + the last external coding-agent transcript. The last phasectl session summary is still injected.",
     ),
     seed: list[str] = typer.Option(
-        None, "--seed", help="Path to a .md/.txt/.json file whose gist is compressed by the LLM and injected as system context. Repeat for multiple files.",
+        None, "--seed", help="Path to a .md/.txt/.json file injected verbatim as system context (first 200KB). Repeat for multiple files.",
+    ),
+    summarize: bool = typer.Option(
+        False, "--summarize", help="Also ask the model for an orient resume synthesis and seed gists, stored next to the verbatim context. May cause signal loss due to compression.",
     ),
 ):
     """Open a new session for a project in the chosen phase.
@@ -375,12 +397,12 @@ def start(
     Fails with exit 1 if a session is already active for the project
     (close it first) or if the phase name is unknown.
 
-    In the default 'orient' phase (unless --no-fuse), phasectl fuses three
-    signals into a 'Resume here:' block on stdout: (1) git state of the
-    indexed repo, (2) the closed summary of the last session, (3) the tail
-    of the most recent external coding-agent transcript for that repo (if
-    one is found). Any --seed files are compressed and added as extra
-    system context.
+    No model is called unless --summarize is passed (DECISION-006). Every
+    session gets PRIOR_DECISIONS (decision lines, verbatim from the last
+    session's turns) and PRIOR_LAST_TURNS (its last two turns, verbatim).
+    In the default 'orient' phase (unless --no-fuse) it also prints live
+    CURRENT_GIT_STATE and stores a verbatim excerpt of the most recent
+    coding-agent transcript for the repo. --seed files are stored verbatim.
     """
     progress = Progress(quiet=quiet)
     progress.step("loading config...")
@@ -415,17 +437,13 @@ def start(
     else:
         progress.step(f"no prior session for '{project}' — starting fresh...")
 
-    resume_git_state: dict = {}
-    resume_synthesis = ""
-    if phase == "orient" and not no_fuse:
-        session_summary = ""
-        if prior:
-            session_summary = (prior[0].get("final_summary") or "").strip()
-
+    fused = phase == "orient" and not no_fuse
+    git_state: dict = {}
+    agent_context = ""
+    agent_path = None
+    if fused:
         repo_path_obj = get_index_path(project, config)
         repo_path = str(repo_path_obj) if repo_path_obj else ""
-        git_state: dict = {}
-        agent_context = ""
         if repo_path:
             try:
                 git_state = get_git_state(repo_path)
@@ -445,98 +463,84 @@ def start(
                 _diag(f"[orient] coding-agent transcript lookup skipped: {e}", quiet=quiet)
         else:
             _diag(
-                f"[orient] no indexed path for '{project}' — fusion limited to session summary.",
+                f"[orient] no indexed path for '{project}' — git state and agent transcript skipped.",
                 quiet=quiet,
             )
 
-        try:
-            progress.step(
-                f"synthesizing resume block via {_compression_label(config)}..."
-            )
-            resume_git_state, resume_synthesis = build_resume_block(git_state, session_summary, agent_context, config)
-        except Exception as e:
-            _diag(f"[orient] synthesis failed: {e}", quiet=quiet)
-            resume_git_state = git_state
-            resume_synthesis = ""
+    seed_files = load_seed_files(seed or [], diag=lambda msg: _diag(msg, quiet=quiet))
 
     progress.step("opening session...")
+    prior_session = prior[0] if prior else None
+    prior_all_turns = store.get_turns(prior_session["id"]) if prior_session else []
     if prior:
-        session_data, turns = prior
-        summary = session_data.get("final_summary", "") or ""
-        close_phase = session_data.get("closing_phase", "unknown") or "unknown"
-        close_date = session_data.get("closed_at", "unknown")
-        if close_date != "unknown":
-            close_date = close_date[:16]
-
-        injection = build_injection_block(session_data, turns)
+        injection = build_injection_block(prior[0], prior[1])
         session = open_session(store, project, phase)
-        store.add_turn(
-            session_id=session.id,
-            phase=phase,
-            role="system",
-            content=injection,
-            token_estimate=estimate_tokens(injection),
-            origin="prior_session",
-        )
+        _store_system_turn(store, session.id, phase, injection, "prior_session")
     else:
         session = open_session(store, project, phase)
 
-    prior_decisions = build_prior_decisions_block(prior[0] if prior else None)
-    store.add_turn(
-        session_id=session.id,
-        phase=phase,
-        role="system",
-        content=prior_decisions,
-        token_estimate=estimate_tokens(prior_decisions),
-        origin="prior_decisions",
-    )
+    # SPEC-002: handoff turns are computed by the CLI from stored turns,
+    # verbatim, with no model call (DECISION-006).
+    prior_decisions = build_prior_decisions_block(prior_session, prior_all_turns)
+    _store_system_turn(store, session.id, phase, prior_decisions, "prior_decisions")
+    prior_last_turns = build_prior_turns_block(prior_session, prior_all_turns)
+    _store_system_turn(store, session.id, phase, prior_last_turns, "prior_turns")
 
-    if resume_synthesis:
-        store.add_turn(
-            session_id=session.id,
-            phase=phase,
-            role="system",
-            content=resume_synthesis,
-            token_estimate=estimate_tokens(resume_synthesis),
-            origin="resume",
+    agent_body = agent_context.strip()
+    if agent_path and agent_body:
+        _store_system_turn(
+            store, session.id, phase,
+            f"AGENT_CONTEXT (external, verbatim excerpt of {agent_path}: last messages, "
+            f"each cut to 1200 chars, at most 4000 chars; not verified):\n{agent_body}",
+            "agent_context",
         )
 
-    seed_paths = seed or []
-    if seed_paths:
-        progress.step(f"compressing {len(seed_paths)} seed file(s)...")
-        seed_block = build_seed_block(
-            seed_paths,
-            config,
-            diag=lambda msg: _diag(msg, quiet=quiet),
-        )
-        if seed_block:
-            store.add_turn(
-                session_id=session.id,
-                phase=phase,
-                role="system",
-                content=seed_block,
-                token_estimate=estimate_tokens(seed_block),
-                origin="seed",
-            )
+    for _path, basename, text, truncated in seed_files:
+        _store_system_turn(store, session.id, phase, seed_turn_text(basename, text, truncated), "seed")
+
+    resume_synthesis = ""
+    if summarize and fused:
+        _warn("warning: resume synthesis may cause signal loss due to compression")
+        progress.step(f"synthesizing resume block via {_compression_label(config)}...")
+        session_summary = (prior_session.get("final_summary") or "").strip() if prior_session else ""
+        try:
+            _, resume_synthesis = build_resume_block(git_state, session_summary, agent_context, config)
+        except Exception as e:
+            _warn(f"resume synthesis failed: {e}")
+            resume_synthesis = ""
+        if resume_synthesis:
+            _store_system_turn(store, session.id, phase, resume_synthesis, "resume")
+
+    if summarize and seed_files:
+        _warn("warning: seed gist may cause signal loss due to compression")
+        for path, basename, text, truncated in seed_files:
+            progress.step(f"summarizing seed {basename} via {_compression_label(config)}...")
+            try:
+                gist = summarize_seed(path, text, truncated, config)
+            except Exception as e:
+                _warn(f"seed gist failed for {basename}: {e}")
+                continue
+            if gist:
+                _store_system_turn(store, session.id, phase, gist, "seed_gist")
 
     progress.done()
-    if resume_git_state.get("branch"):
-        dirty = resume_git_state.get("dirty_count", 0)
+    if fused and git_state.get("branch"):
+        dirty = git_state.get("dirty_count", 0)
         dirty_display = "unavailable" if dirty is None else dirty
-        head = (resume_git_state.get("last_commit") or {}).get("hash")
+        head = (git_state.get("last_commit") or {}).get("hash")
         parts = [
-            f"branch={resume_git_state['branch']}",
-            f"dirty={'unavailable' if resume_git_state.get('dirty') is None else bool(resume_git_state.get('dirty'))}",
+            f"branch={git_state['branch']}",
+            f"dirty={'unavailable' if git_state.get('dirty') is None else bool(git_state.get('dirty'))}",
             f"dirty_count={dirty_display}",
+            f"head={head}" if head else "head=unavailable",
         ]
-        if head:
-            parts.append(f"head={head}")
-        else:
-            parts.append("head=unavailable")
         print("CURRENT_GIT_STATE: " + " ".join(parts))
-    elif resume_git_state:
+    elif fused and git_state:
         print("CURRENT_GIT_STATE: unavailable")
     print(prior_decisions)
+    print(prior_last_turns)
+    if agent_path and agent_body:
+        print(f"AGENT_CONTEXT: {len(agent_body)} chars from {agent_path}")
     if resume_synthesis:
         print("[MODEL-DERIVED RESUME (non-authoritative)]")
         print(resume_synthesis)
@@ -578,13 +582,17 @@ def chat(
     prior_session_memory: bool = typer.Option(
         False, "--prior-session-memory/--no-prior-session-memory",
         help="Include the most recent closed session's summary and tail turns as historical (non-authoritative) context.",
+    ),    compress: bool = typer.Option(
+        False, "--compress",
+        help="When the session is over the phase token budget, let the model summarize older conversation turns. May cause signal loss due to compression.",
     ),
 ):
     """Send a message in the active session and print the reply.
 
     Uses the current phase's system prompt, temperature, and token budget.
-    If the running token estimate exceeds the phase budget, older turns are
-    compressed into a summary before the request. In the impl and validate
+    Nothing is compressed by default: over budget, every turn is still sent
+    and a warning is printed. With --compress, conversation turns older than
+    the last two are summarized by the model (system turns never are). In the impl and validate
     phases the model can call the search_symbols tool, which shells out to
     the configured indexer binary directly; the tool loop runs until the
     model produces a plain text reply.
@@ -602,7 +610,11 @@ def chat(
         original_len = len(stdin_raw)
         max_chars = 12000
         if original_len > max_chars:
-            stdin_content = stdin_raw[:max_chars]
+            # SPEC-003 INV-003-07: the cut is stated where the model sees it.
+            stdin_content = (
+                stdin_raw[:max_chars]
+                + f"\n[stdin truncated: first {max_chars} of {original_len} chars]"
+            )
             print(
                 f"stdin: {original_len} chars truncated to {max_chars}",
                 file=sys.stderr,
@@ -633,7 +645,16 @@ def chat(
 
     turns = store.get_turns(session_data["id"])
 
-    if should_compress(turns, phase_config.token_budget):
+    over_budget = should_compress(turns, phase_config.token_budget)
+    if over_budget and not compress:
+        context_tokens = sum(t["token_estimate"] for t in turns if not t["compressed"])
+        _warn(
+            f"warning: context ~{context_tokens} tokens exceeds the {current_phase} budget of "
+            f"{phase_config.token_budget}; nothing was compressed. Use --compress (may cause "
+            "signal loss due to compression) or close and start a new session."
+        )
+    if over_budget and compress:
+        _warn("warning: tail compression may cause signal loss due to compression")
         progress.step(
             f"compressing tail turns via {_compression_label(config)}..."
         )
@@ -812,17 +833,18 @@ def switch(
 @app.command()
 def close(
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Reserved; snapshot output is a single line and is always printed."),
+    summarize: bool = typer.Option(False, "--summarize", help="Also append a model-written summary after the deterministic snapshot. May cause signal loss due to compression."),
 ):
-    """Close the active session and produce a snapshot summary.
+    """Close the active session and store a deterministic snapshot.
 
-    All original turns are handed to the 'snapshot' phase prompt via the
-    compression model; synthetic compression-summary turns are excluded.
-    The resulting summary is stored on the session
-    row, and any RFC-<n> / DECISION-<n> tokens found in it are linked into
-    the local session graph (~/.config/phasectl/graph.json).
+    The snapshot is built by the CLI from the session's stored turns, with
+    no model call (SPEC-001): every line naming a DECISION, verbatim; every
+    RFC/DECISION reference; and the last two turns, verbatim. Graph links
+    come from this snapshot only. --summarize appends a model summary after
+    it, labelled model-derived.
 
     Prints '<session-id> <turns>→1 <tokens>t' on stdout.
-    Exit 3 if no session is active, 2 if compression fails.
+    Exit 3 if no session is active, 2 if --summarize fails (session stays open).
     """
     progress = Progress(quiet=quiet)
     progress.step("loading config...")
@@ -839,67 +861,42 @@ def close(
     current_phase = _derive_current_phase(store, session_data)
     snapshot_phase = load_phase("snapshot")
 
-    turns = [
-        turn
-        for turn in store.get_turns(session_data["id"])
-        if turn["phase"] != "_compression"
-    ]
-    turn_texts = [
-        f"[{t['phase']}][{t['role']}]: {t['content']}" for t in turns
-    ]
-    turns_text = (
-        "\n\n".join(turn_texts) if turn_texts else "No turns in this session."
-    )
-
-    progress.step(
-        f"compressing {len(turns)} turns via {_compression_label(config)}..."
-    )
-    try:
-        summary = api_compress(
-            turns_text, config, system_prompt=snapshot_phase.system_prompt
-        )
-    except AuthError as e:
-        progress.done()
-        _die_on_auth_error(e)
-    except Exception as e:
-        progress.done()
-        print(f"Compression failed: {e}", file=sys.stderr)
-        raise typer.Exit(2)
-
-    source_references = list(dict.fromkeys(
-        reference
-        for turn in turns
-        for reference in extract_decision_references(turn["content"])
-    ))
-    summary_references = set(extract_decision_references(summary))
-    missing_references = [
-        reference for reference in source_references
-        if reference not in summary_references
-    ]
-    if missing_references:
-        print(
-            "Recovered decision references missing from generated summary: "
-            + ", ".join(missing_references),
-            file=sys.stderr,
-        )
-        appendix = (
-            "Decision references recovered from original turns (historical "
-            "occurrence only; not acceptance, implementation, or verification):\n"
-            + "\n".join(f"- {reference}" for reference in missing_references)
-        )
-        summary = f"{summary}\n\n{appendix}"
-
     all_turns = store.get_turns(session_data["id"])
+    turns = [turn for turn in all_turns if turn["phase"] != "_compression"]
+    snapshot = build_snapshot(session_data["id"], all_turns)
+    summary = snapshot
+
+    if summarize:
+        _warn("warning: snapshot summary may cause signal loss due to compression")
+        turns_text = "\n\n".join(
+            f"[{t['phase']}][{t['role']}]: {t['content']}" for t in turns
+        ) or "No turns in this session."
+        progress.step(
+            f"summarizing {len(turns)} turns via {_compression_label(config)}..."
+        )
+        try:
+            model_summary = api_compress(
+                turns_text, config, system_prompt=snapshot_phase.system_prompt
+            )
+        except AuthError as e:
+            progress.done()
+            _die_on_auth_error(e)
+        except Exception as e:
+            progress.done()
+            print(f"Compression failed: {e}", file=sys.stderr)
+            raise typer.Exit(2)
+        summary = f"{snapshot}\n\n[MODEL-DERIVED SUMMARY (non-authoritative)]\n{model_summary}"
+
     total_tokens = sum(t["token_estimate"] for t in all_turns)
 
     progress.step("storing session snapshot...")
     close_session(store, session_data["id"], current_phase, summary, total_tokens)
 
-    rfcs, decisions = extract_rfcs_and_decisions(summary)
+    rfcs, decisions = extract_rfcs_and_decisions(snapshot)
     progress.step(
         f"updating graph ({len(rfcs)} RFCs, {len(decisions)} DECISIONs linked)..."
     )
-    persist_session_graph(session_data["id"], project, summary, session_data["created_at"], config)
+    persist_session_graph(session_data["id"], project, snapshot, session_data["created_at"], config)
 
     progress.done()
     print(f"{session_data['id'][:8]} {len(turns)}→1 {total_tokens}t")
