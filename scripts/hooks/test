@@ -1,0 +1,90 @@
+#!/bin/sh
+# test — exercise commit-msg and pre-push against fixed cases in a throwaway repo.
+# Usage: hooks/test        Output: TAP on stdout.
+# Substrate: POSIX sh, git, mktemp. Exit: 0 all pass, 1 any failure.
+
+set -u
+
+src=$(cd "$(dirname "$0")" && pwd -P)
+work=$(mktemp -d) || exit 1
+trap 'rm -rf "$work"' EXIT INT TERM
+
+n=0
+failed=0
+
+check() {   # check <pass | reason-substring> <description> <command...>
+    expect=$1; desc=$2; shift 2
+    n=$((n + 1))
+    if err=$("$@" 2>&1 >/dev/null); then
+        got=pass
+    else
+        got="refused: $err"
+    fi
+    ok=no
+    if [ "$expect" = pass ]; then
+        [ "$got" = pass ] && ok=yes
+    else
+        case $got in "refused: "*"$expect"*) ok=yes ;; esac
+    fi
+    if [ "$ok" = yes ]; then
+        printf 'ok %d - %s\n' "$n" "$desc"
+    else
+        printf 'not ok %d - %s (expected %s; got %s)\n' "$n" "$desc" "$expect" "$(printf %s "$got" | head -n 1)"
+        failed=$((failed + 1))
+    fi
+}
+
+# Fixture repo with its own hooks copy and config.
+cd "$work" || exit 1
+git init -q -b main repo && cd repo || exit 1
+git config user.email test@example.invalid
+git config user.name test
+mkdir hooks
+cp "$src/commit-msg" "$src/pre-push" "$src/types" "$src/protected" hooks/
+cat > hooks/anchors <<'EOF'
+DECISION  DECISIONS.md  ##
+V         docs/*.md     ###
+INV       -             -
+EOF
+printf '## DECISION-001 — first\n' > DECISIONS.md
+mkdir docs && printf '### V-002-03\n' > docs/VIOLATIONS.md
+
+msg() { printf '%s\n' "$@" > "$work/msg"; sh hooks/commit-msg "$work/msg"; }
+
+echo "# commit-msg"
+check pass                   "valid subject, em dash"           msg "docs(seed): add the first decision — DECISION-001"
+check pass                   "valid subject, ascii hyphen"      msg "docs(seed): add the first decision - DECISION-001"
+check pass                   "two anchors, one per source"      msg "fix(audit): abort on write failure — V-002-03, DECISION-001"
+check pass                   "exempt type (INV)"                msg "test(spec): cover the invariant here — INV-001-03"
+check pass                   "comment lines ignored"            msg "# git comment" "docs(seed): add the first decision — DECISION-001"
+check pass                   "merge commit skipped"             msg "Merge branch 'x' into main"
+check "no anchor"            "no anchor"                        msg "docs(seed): add the first decision — nothing"
+check "format"               "bad format"                       msg "add the first decision DECISION-001"
+check "format"               "unknown type"                     msg "feature(seed): add the first decision — DECISION-001"
+check "format"               "description too short"            msg "docs(seed): short — DECISION-001"
+check "anchor not found"     "anchor does not resolve"          msg "docs(seed): add a missing decision — DECISION-999"
+check "unknown anchor type"  "unknown anchor type"              msg "docs(seed): add the first decision — FOO-001"
+check "co-author"            "co-author line"                   msg "docs(seed): add the first decision — DECISION-001" "" "Co-authored-by: x <x@y>"
+check "empty message"        "empty message"                    msg ""
+
+# Commits for pre-push: a -> b, and c on a side branch from a.
+git add -A && git commit -qm "chore(fixture): base commit for tests — DECISION-001" --no-verify
+a=$(git rev-parse HEAD)
+git commit -q --allow-empty -m "b" --no-verify; b=$(git rev-parse HEAD)
+git switch -q -c side "$a"
+git commit -q --allow-empty -m "c" --no-verify; c=$(git rev-parse HEAD)
+z=0000000000000000000000000000000000000000
+
+push() { printf '%s %s %s %s\n' "$1" "$2" "$3" "$4" | sh hooks/pre-push origin url; }
+push_gov() { printf '%s %s %s %s\n' "$1" "$2" "$3" "$4" | ENG_GOVERNOR=1 sh hooks/pre-push origin url; }
+
+echo "# pre-push"
+check pass                   "new feature branch"               push refs/heads/f "$b" refs/heads/f "$z"
+check pass                   "fast-forward feature branch"      push refs/heads/f "$b" refs/heads/f "$a"
+check "protected ref"        "push to main"                     push refs/heads/main "$b" refs/heads/main "$a"
+check "deletion"             "delete remote branch"             push "(delete)" "$z" refs/heads/f "$a"
+check "non-fast-forward"     "force push (non-fast-forward)"    push refs/heads/f "$c" refs/heads/f "$b"
+check pass                   "governor override to main"        push_gov refs/heads/main "$b" refs/heads/main "$a"
+
+printf '1..%d\n' "$n"
+[ "$failed" -eq 0 ]
