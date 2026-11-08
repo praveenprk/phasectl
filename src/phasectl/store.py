@@ -111,7 +111,7 @@ class SQLiteStore:
 
     def get_turns(self, session_id: str) -> list[dict]:
         cursor = self.conn.execute(
-            "SELECT * FROM turns WHERE session_id = ? ORDER BY timestamp ASC",
+            "SELECT * FROM turns WHERE session_id = ? ORDER BY timestamp ASC, id ASC",
             (session_id,),
         )
         return [dict(row) for row in cursor.fetchall()]
@@ -134,7 +134,7 @@ class SQLiteStore:
 
     def get_uncompressed_turns(self, session_id: str) -> list[dict]:
         cursor = self.conn.execute(
-            "SELECT * FROM turns WHERE session_id = ? AND compressed = 0 ORDER BY timestamp ASC",
+            "SELECT * FROM turns WHERE session_id = ? AND compressed = 0 ORDER BY timestamp ASC, id ASC",
             (session_id,),
         )
         return [dict(row) for row in cursor.fetchall()]
@@ -151,7 +151,7 @@ class SQLiteStore:
 
     def get_last_uncompressed_turns(self, session_id: str, n: int) -> list[dict]:
         cursor = self.conn.execute(
-            "SELECT * FROM turns WHERE session_id = ? AND compressed = 0 ORDER BY timestamp DESC LIMIT ?",
+            "SELECT * FROM turns WHERE session_id = ? AND compressed = 0 ORDER BY timestamp DESC, id DESC LIMIT ?",
             (session_id, n),
         )
         rows = cursor.fetchall()
