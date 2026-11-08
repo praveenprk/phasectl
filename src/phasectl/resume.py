@@ -42,6 +42,7 @@ def get_git_state(repo_path: str) -> dict:
         lines = [line for line in porcelain.splitlines() if line.strip()]
         state["dirty"] = bool(lines)
         state["dirty_count"] = len(lines)
+        state["status_lines"] = lines
         files: list[str] = []
         for line in lines[:10]:
             parts = line[3:].split(" -> ")
