@@ -329,3 +329,62 @@ def test_stdout_order(env, monkeypatch):
     )]
     assert positions == sorted(positions)
     assert out.rstrip("\n").splitlines()[-1].startswith("session opened: ")
+
+
+def _git_repo(tmp_path):
+    import subprocess
+
+    repo = tmp_path / "live"
+    repo.mkdir()
+    run = lambda *a: subprocess.run(["git", *a], cwd=repo, check=True, capture_output=True)
+    run("init", "-q", "-b", "main")
+    run("config", "user.email", "t@example.invalid")
+    run("config", "user.name", "t")
+    (repo / "cli.py").write_text("v1\n")
+    run("add", ".")
+    run("commit", "-q", "-m", "feat(importer): parse csv rows")
+    (repo / "cli.py").write_text("v2\n")
+    (repo / "notes.txt").write_text("n\n")
+    for i in range(55):
+        (repo / f"zz{i:02d}.txt").write_text("x\n")
+    head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=repo,
+                          check=True, capture_output=True, text=True).stdout.strip()
+    return repo, head
+
+
+def test_inv_002_12_live_git_block_names_head_and_changes(env, monkeypatch, tmp_path):
+    from phasectl.resume import get_git_state
+
+    store, _ = env
+    repo, head = _git_repo(tmp_path)
+    monkeypatch.setattr("phasectl.cli.get_git_state", get_git_state)
+    monkeypatch.setattr("phasectl.cli.get_index_path", lambda project, config: repo)
+    _forbid_models(monkeypatch)
+
+    out = _start("--phase", "orient").stdout
+
+    lines = out.splitlines()
+    i = lines.index(f"CURRENT_GIT_HEAD: {head} feat(importer): parse csv rows")
+    assert lines[i - 1] == f"CURRENT_GIT_STATE: branch=main dirty=True dirty_count=57 head={head}"
+    assert lines[i + 1] == "CURRENT_GIT_CHANGES (git status --porcelain, verbatim):"
+    listed = lines[i + 2:i + 52]
+    assert listed[0] == " M cli.py"
+    assert "?? notes.txt" in listed
+    assert lines[i + 52] == "… (7 more; run git status)"
+
+
+def test_inv_002_12_clean_and_unavailable_states():
+    from phasectl.handoff import format_live_git_block
+
+    clean = {"branch": "main", "dirty": False, "dirty_count": 0, "status_lines": [],
+             "last_commit": {"hash": "abc1234", "subject": "s", "when": "now"}}
+    assert format_live_git_block(clean).splitlines()[1:] == [
+        "CURRENT_GIT_HEAD: abc1234 s", "CURRENT_GIT_CHANGES: none",
+    ]
+    broken = {"branch": "main", "dirty": None, "dirty_count": None, "last_commit": None}
+    assert format_live_git_block(broken).splitlines() == [
+        "CURRENT_GIT_STATE: branch=main dirty=unavailable dirty_count=unavailable head=unavailable",
+        "CURRENT_GIT_HEAD: unavailable",
+        "CURRENT_GIT_CHANGES: unavailable",
+    ]
+    assert format_live_git_block({}) == "CURRENT_GIT_STATE: unavailable"
