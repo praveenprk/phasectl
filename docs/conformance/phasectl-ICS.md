@@ -20,6 +20,6 @@ SPEC-001 is closed.
 | ENG-STD-002 Lifecycle gates | not yet | No RFC/SPEC | V-ENG-002-01 |
 | ENG-STD-003 Design | partial | §0.3: README "progress to stderr … stdout stays clean for piping". §5 D: `LLMProvider` ABC (DECISION-004). §0.2/0.8: indexer is a plain binary contract (DECISION-003). §0.5 exit codes and §0.6 minimum substrate not yet assessed | — |
 | ENG-STD-004 Construction | partial | §3.1: CONTRIBUTING "why-only comments". §7.1: "no new dependencies without a strong reason" | V-ENG-004-01, V-ENG-004-02 |
-| ENG-STD-005 Change control | partial | scripts/hooks/ (commit-msg, pre-push). scripts/hooks/test passes 20/20. AGENTS.md. Host branch protection on main: pending | — |
+| ENG-STD-005 Change control | conformant | scripts/hooks/ (commit-msg, pre-push). scripts/hooks/test passes 20/20. AGENTS.md. GitHub branch protection on main (PR required, enforce_admins, no force push, no deletion), read back via API on 2026-11-08. Adoption via PR #12 | — |
 | ENG-STD-006 Registers | conformant | docs/DECISIONS.md, docs/VIOLATIONS.md, this file | — |
 | ENG-STD-007 Quality model | not assessed | — | — |
