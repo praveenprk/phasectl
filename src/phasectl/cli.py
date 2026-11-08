@@ -25,6 +25,7 @@ from .handoff import (
     build_prior_decisions_block,
     build_prior_turns_block,
     build_snapshot,
+    format_live_git_block,
 )
 from .api import (
     chat as api_chat,
@@ -524,19 +525,8 @@ def start(
                 _store_system_turn(store, session.id, phase, gist, "seed_gist")
 
     progress.done()
-    if fused and git_state.get("branch"):
-        dirty = git_state.get("dirty_count", 0)
-        dirty_display = "unavailable" if dirty is None else dirty
-        head = (git_state.get("last_commit") or {}).get("hash")
-        parts = [
-            f"branch={git_state['branch']}",
-            f"dirty={'unavailable' if git_state.get('dirty') is None else bool(git_state.get('dirty'))}",
-            f"dirty_count={dirty_display}",
-            f"head={head}" if head else "head=unavailable",
-        ]
-        print("CURRENT_GIT_STATE: " + " ".join(parts))
-    elif fused and git_state:
-        print("CURRENT_GIT_STATE: unavailable")
+    if fused and (git_state or get_index_path(project, config)):
+        print(format_live_git_block(git_state))
     print(prior_decisions)
     print(prior_last_turns)
     if agent_path and agent_body:
@@ -674,23 +664,7 @@ def chat(
         git_state = get_git_state(repo_path_obj) if repo_path_obj else {}
     except Exception:
         git_state = {}
-    if git_state.get("branch"):
-        dirty = git_state.get("dirty", None)
-        dirty_count = git_state.get("dirty_count", None)
-        parts = [
-            f"branch={git_state['branch']}",
-            "dirty=" + ("unavailable" if dirty is None else str(bool(dirty))),
-            "dirty_count=" + ("unavailable" if dirty_count is None else str(dirty_count)),
-        ]
-        last_commit = git_state.get("last_commit", None)
-        head = last_commit.get("hash") if isinstance(last_commit, dict) else None
-        if head:
-            parts.append(f"head={head}")
-        else:
-            parts.append("head=unavailable")
-        current_git_state = "CURRENT_GIT_STATE: " + " ".join(parts)
-    else:
-        current_git_state = "CURRENT_GIT_STATE: unavailable"
+    current_git_state = format_live_git_block(git_state)
     print(current_git_state)
 
     messages = []

@@ -169,3 +169,27 @@ def test_inv_003_08_no_active_session(env):
     result = _chat("hello")
     assert result.exit_code == 3
     assert "No active session. Run 'phasectl start' first." in result.stderr
+
+
+def test_inv_003_09_chat_sends_full_live_git_block(env, monkeypatch):
+    store, sent = env
+    open_session(store, "proj", "design")
+    monkeypatch.setattr("phasectl.cli.get_git_state", lambda path: {
+        "branch": "feat/importer", "dirty": True, "dirty_count": 2,
+        "status_lines": [" M cli.py", "?? notes.txt"],
+        "last_commit": {"hash": "189dad5", "subject": "feat(importer): parse csv rows", "when": "now"},
+    })
+    _forbid_compression(monkeypatch)
+
+    result = _chat("where are we?")
+
+    block = (
+        "CURRENT_GIT_STATE: branch=feat/importer dirty=True dirty_count=2 head=189dad5\n"
+        "CURRENT_GIT_HEAD: 189dad5 feat(importer): parse csv rows\n"
+        "CURRENT_GIT_CHANGES (git status --porcelain, verbatim):\n"
+        " M cli.py\n"
+        "?? notes.txt"
+    )
+    assert result.exit_code == 0, result.output
+    assert sent[0][-2]["content"] == block
+    assert result.stdout.startswith(block + "\n")

@@ -147,3 +147,43 @@ def build_prior_turns_block(prior_session: dict | None, prior_turns: list[dict] 
         "not verified against the current repository):"
     )
     return header + "\n" + _format_turns(last)
+
+
+_MAX_STATUS_LINES = 50
+
+
+def format_live_git_block(git_state: dict) -> str:
+    """SPEC-002 live git block. Computed from git at invocation; never from history."""
+    if not git_state.get("branch"):
+        return "CURRENT_GIT_STATE: unavailable"
+
+    dirty = git_state.get("dirty")
+    dirty_count = git_state.get("dirty_count")
+    last_commit = git_state.get("last_commit")
+    head = last_commit.get("hash") if isinstance(last_commit, dict) else None
+    lines = [
+        "CURRENT_GIT_STATE: " + " ".join([
+            f"branch={git_state['branch']}",
+            "dirty=" + ("unavailable" if dirty is None else str(bool(dirty))),
+            "dirty_count=" + ("unavailable" if dirty_count is None else str(dirty_count)),
+            f"head={head}" if head else "head=unavailable",
+        ])
+    ]
+
+    if head:
+        lines.append(f"CURRENT_GIT_HEAD: {head} {last_commit.get('subject', '')}".rstrip())
+    else:
+        lines.append("CURRENT_GIT_HEAD: unavailable")
+
+    status_lines = git_state.get("status_lines")
+    if dirty is None or status_lines is None:
+        lines.append("CURRENT_GIT_CHANGES: unavailable")
+    elif not status_lines:
+        lines.append("CURRENT_GIT_CHANGES: none")
+    else:
+        lines.append("CURRENT_GIT_CHANGES (git status --porcelain, verbatim):")
+        lines.extend(status_lines[:_MAX_STATUS_LINES])
+        rest = len(status_lines) - _MAX_STATUS_LINES
+        if rest > 0:
+            lines.append(f"… ({rest} more; run git status)")
+    return "\n".join(lines)
