@@ -1,0 +1,12 @@
+# Anchor sources for commit-msg. One source per line, whitespace-separated:
+#   TYPE   FILES (glob, relative to repo root; '-' = exempt)   LINE-PREFIX
+# An anchor resolves if a matching file has a line '<LINE-PREFIX> <ANCHOR>'
+# followed by a space or end of line. A TYPE may appear on several lines.
+# Paths must not contain spaces. LINE-PREFIX must be literal (no regex).
+# Vendored from eng-principles hooks/ (ENG-DEC-007). Policy below is phasectl's.
+DECISION  docs/DECISIONS.md    ##
+V         docs/VIOLATIONS.md   ###
+V-ENG     docs/VIOLATIONS.md   ###
+RFC       docs/rfc/*.md        #
+SPEC      docs/specs/*.md      #
+INV       -                    -

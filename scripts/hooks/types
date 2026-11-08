@@ -1,0 +1,9 @@
+# Commit types allowed in the subject line (ENG-STD-005 §1.2). One per line.
+# A project MAY add types. It MUST NOT remove the base set.
+feat
+fix
+test
+refactor
+docs
+chore
+design

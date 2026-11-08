@@ -1,0 +1,48 @@
+#!/bin/sh
+# pre-push — enforce ENG-STD-005 §2.2–2.3 locally: no push to a protected
+# ref, no remote branch deletion, no non-fast-forward (force) push.
+#
+# This is the local guardrail. The authoritative control is branch
+# protection on the git host.
+# Governor override for one push: ENG_GOVERNOR=1 git push ...
+#
+# Substrate: POSIX sh, git, grep.
+# Config (plain text, next to this file): protected — one ref per line.
+# Exit: 0 allowed, 1 refused (reason on stderr).
+
+set -u
+
+dir=$(dirname "$0")
+
+[ -n "${ENG_GOVERNOR:-}" ] && exit 0
+
+refuse() {
+    printf 'pre-push: refused: %s\n' "$1" >&2
+    printf '  %s\n' "governor override: ENG_GOVERNOR=1 git push ..." >&2
+    exit 1
+}
+
+all_zero() {
+    case $1 in
+        *[!0]*) return 1 ;;
+        *)      return 0 ;;
+    esac
+}
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    if [ -r "$dir/protected" ] && grep -v '^#' "$dir/protected" | grep -qxF "$remote_ref"; then
+        refuse "push to protected ref $remote_ref — push a branch and open a PR"
+    fi
+
+    if all_zero "$local_sha"; then
+        refuse "deletion of $remote_ref"
+    fi
+
+    if ! all_zero "$remote_sha"; then
+        if ! git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null; then
+            refuse "non-fast-forward push to $remote_ref (fetch and rebase, or ask the governor)"
+        fi
+    fi
+done
+
+exit 0

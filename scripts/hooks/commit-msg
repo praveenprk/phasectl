@@ -1,0 +1,86 @@
+#!/bin/sh
+# commit-msg — enforce ENG-STD-005 §1 on the subject line:
+#   type(scope): description — ANCHOR[, ANCHOR...]
+# Every anchor must resolve to a governed entry (see ./anchors).
+# Any co-authored-by line is refused (ENG-STD-005 §1.4; stricter than required).
+#
+# Substrate: POSIX sh, git, grep, sed, awk, tr.
+# Config (plain text, next to this file): types, anchors.
+# Exit: 0 accepted, 1 refused (reason on stderr).
+
+set -u
+
+dir=$(dirname "$0")
+msgfile=$1
+
+refuse() {
+    printf 'commit-msg: refused: %s\n' "$1" >&2
+    shift
+    for line in "$@"; do printf '  %s\n' "$line" >&2; done
+    exit 1
+}
+
+root=$(git rev-parse --show-toplevel) || refuse "not inside a git work tree"
+
+[ -r "$dir/types" ]   || refuse "missing config: $dir/types"
+[ -r "$dir/anchors" ] || refuse "missing config: $dir/anchors"
+
+# Body without git comment lines.
+body=$(grep -v '^#' "$msgfile")
+subject=$(printf '%s\n' "$body" | sed -n '/[^[:space:]]/{p;q;}')
+
+[ -n "$subject" ] || refuse "empty message"
+
+case $subject in
+    "Merge "*) exit 0 ;;
+esac
+
+if printf '%s\n' "$body" | grep -qi 'co-authored[- ]by'; then
+    refuse "co-author line present" "accountability belongs to the human who signs (ENG-P-11)"
+fi
+
+types=$(grep -v '^#' "$dir/types" | grep . | paste -sd'|' -)
+
+if ! printf '%s\n' "$subject" | grep -qE "^($types)\([A-Za-z0-9_.-]+\): .{10,} (—|-) .+$"; then
+    refuse "format" \
+        "expected: type(scope): description — ANCHOR" \
+        "types:    $(printf '%s' "$types" | tr '|' ' ')" \
+        "got:      $subject"
+fi
+
+case $subject in
+    *" — "*) refs=${subject##* — } ;;
+    *)       refs=${subject##* - } ;;
+esac
+
+anchors=$(printf '%s\n' "$refs" | tr -cs 'A-Z0-9-' '\n' | grep -E '^[A-Z]+(-[A-Z]+)*(-[0-9]+)+$')
+
+[ -n "$anchors" ] || refuse "no anchor" "got: $refs"
+
+for anchor in $anchors; do
+    type=$(printf '%s\n' "$anchor" | sed 's/-[0-9].*$//')
+    sources=$(awk -v t="$type" '!/^#/ && $1 == t { print $2, $3 }' "$dir/anchors")
+
+    [ -n "$sources" ] || refuse "unknown anchor type: $type ($anchor)" "known: $(awk '!/^#/ && NF { printf "%s ", $1 }' "$dir/anchors")"
+
+    found=no
+    while read -r files prefix; do
+        if [ "$files" = "-" ]; then
+            found=yes   # exempt type (e.g. INV): existence not checked
+            break
+        fi
+        for file in $root/$files; do
+            [ -f "$file" ] || continue
+            if grep -qE "^$prefix $anchor( |\$)" "$file"; then
+                found=yes
+                break 2
+            fi
+        done
+    done <<EOF
+$sources
+EOF
+
+    [ "$found" = yes ] || refuse "anchor not found: $anchor" "expected a line starting '<prefix> $anchor' in a file listed in $dir/anchors"
+done
+
+exit 0

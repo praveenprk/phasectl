@@ -1,0 +1,3 @@
+# Refs that only the governor pushes to (ENG-STD-005 §2.2). One per line.
+refs/heads/main
+refs/heads/master
