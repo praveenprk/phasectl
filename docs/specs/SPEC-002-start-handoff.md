@@ -8,6 +8,18 @@ Refuses    : A session is already active for the project → stderr `Session alr
 
 Source turns and decision lines are as defined in SPEC-001. The **prior session** is the most recently closed session of the project.
 
+The **live git block** is three lines and more, all computed from git at invocation:
+
+```
+CURRENT_GIT_STATE: branch=<b> dirty=<True|False> dirty_count=<n> head=<short-sha>
+CURRENT_GIT_HEAD: <short-sha> <subject>
+CURRENT_GIT_CHANGES (git status --porcelain, verbatim):
+<porcelain line>
+…
+```
+
+Any value git cannot supply prints `unavailable` (`CURRENT_GIT_HEAD: unavailable`, `CURRENT_GIT_CHANGES: unavailable`). A clean tree prints `CURRENT_GIT_CHANGES: none`. At most 50 porcelain lines are listed; beyond that the block ends with `… (<k> more; run git status)`.
+
 ## Stored handoff turns (role `system`, in this order)
 
 | Origin | When | Content |
@@ -23,7 +35,7 @@ Source turns and decision lines are as defined in SPEC-001. The **prior session*
 Explicit empty states: no prior session → `PRIOR_DECISIONS: unavailable (no closed session for this project)` and `PRIOR_LAST_TURNS: unavailable (no closed session for this project)`. Prior session without decision lines → `PRIOR_DECISIONS: none recorded in session <id-8>`. Prior session without conversation turns → `PRIOR_LAST_TURNS: none recorded in session <id-8>`.
 
 ## Stdout, in order
-1. Phase `orient` without `--no-fuse`: `CURRENT_GIT_STATE: …` as today (DECISION-005).
+1. Phase `orient` without `--no-fuse`: the live git block (DECISION-005).
 2. The `prior_decisions` content.
 3. The `prior_turns` content.
 4. If an `agent_context` turn was stored: `AGENT_CONTEXT: <n> chars from <path>` (one line; the excerpt itself is not printed).
@@ -41,6 +53,7 @@ INV-002-07 — Each usable `--seed` file MUST be stored verbatim as a `seed` tur
 INV-002-08 — With `--summarize`, each model step MUST print `warning: <step> may cause signal loss due to compression` on stderr (`<step>` is `resume synthesis` or `seed gist`, even under `--quiet`). Model output MUST be stored only as `resume` / `seed_gist` turns in addition to the turns of INV-002-02..07, which MUST be unchanged. Verified by: test_inv_002_08_summarize_adds_labelled_turns_and_warns
 INV-002-09 — With `--summarize`, a failed model step MUST NOT stop `start`. The step's failure is reported on stderr and no turn is stored for it. Verified by: test_inv_002_09_summarize_failure_is_reported_not_stored
 INV-002-10 — `CURRENT_GIT_STATE` MUST come from live git and print `unavailable` for any field git cannot supply, never a substitute value (DECISION-005, backfill). Verified by: tests/test_context_boundary_v0.py::test_start_unavailable_working_tree_status_displays_unavailable, test_start_preserves_git_state_when_resume_synthesis_fails
+INV-002-12 — The live git block MUST name HEAD's subject and every changed path as git reports it (up to 50 lines, then an explicit count of the rest). None of it may come from stored history. Verified by: test_inv_002_12_live_git_block_names_head_and_changes
 INV-002-11 — The refusals in the contract MUST exit 1 and change nothing. Verified by: test_inv_002_11_refusals
 
 ## Out of scope
