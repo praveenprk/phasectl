@@ -15,7 +15,13 @@ import os
 from .store import SQLiteStore
 from .session import open_session, close_session, load_prior_session
 from .phases import load_phase, list_phases
-from .context import estimate_tokens, should_compress, compress_tail, build_injection_block
+from .context import (
+    estimate_tokens,
+    should_compress,
+    compress_tail,
+    build_injection_block,
+    build_prior_decisions_block,
+)
 from .api import (
     chat as api_chat,
     compress as api_compress,
@@ -475,6 +481,16 @@ def start(
     else:
         session = open_session(store, project, phase)
 
+    prior_decisions = build_prior_decisions_block(prior[0] if prior else None)
+    store.add_turn(
+        session_id=session.id,
+        phase=phase,
+        role="system",
+        content=prior_decisions,
+        token_estimate=estimate_tokens(prior_decisions),
+        origin="prior_decisions",
+    )
+
     if resume_synthesis:
         store.add_turn(
             session_id=session.id,
@@ -520,6 +536,7 @@ def start(
         print("CURRENT_GIT_STATE: " + " ".join(parts))
     elif resume_git_state:
         print("CURRENT_GIT_STATE: unavailable")
+    print(prior_decisions)
     if resume_synthesis:
         print("[MODEL-DERIVED RESUME (non-authoritative)]")
         print(resume_synthesis)
