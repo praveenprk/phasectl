@@ -80,3 +80,31 @@ Reason  : As recorded in 11efffb ("Ground resume block Git state outside LLM
           synthesis", "Eliminate fabricated Git-state defaults").
 Risk    : none recorded
 Status  : ACCEPTED
+
+---
+
+## DECISION-006 — Context is lossless by default; model packaging is opt-in
+
+Date    : 2026-11-08
+Refs    : RFC-001; SPEC-001, SPEC-002, SPEC-003; V-ENG-002-02; DECISION-005
+Decision: On every default path, context that phasectl hands to a model or to
+          the next session is either computed by the CLI or copied verbatim
+          from the stored turns or files, with a provenance label. No model
+          rewrites context unless the user passes an explicit flag
+          (`close --summarize`, `start --summarize`, `chat --compress`).
+          An opted-in rewrite warns on stderr ("may cause signal loss due to
+          compression"), is labelled model-derived, and is added next to the
+          verbatim source. It never replaces that source. A size cap is
+          stated in the text the model sees, never applied silently.
+Reason  : phasectl's value is continuity and authority. Experiment 002 showed
+          a default model rewrite (the resume synthesis) losing every decision
+          ID (0/12). Per-fact recovery (PRs #9, #11) leaves all other facts
+          exposed. Rejected: keeping model steps on by default with better
+          prompts (still loses silently), and removing model packaging
+          entirely (summaries stay useful on demand).
+Risk    : Verbatim context is larger than a summary. Sessions can exceed a
+          phase budget sooner, and the user then chooses `--compress` or a
+          new session. Raw history may be read by a model as current state;
+          it is labelled historical, and CURRENT_GIT_STATE stays the
+          authority (DECISION-005).
+Status  : PROPOSED

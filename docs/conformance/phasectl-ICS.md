@@ -9,8 +9,8 @@ Baseline: origin/main b3a2376. `python -m pytest`: 41 passed (Python 3.14, 2026-
 
 ## phasectl SPECs
 
-No SPECs exist yet (V-ENG-002-01). Per-invariant rows start here once
-SPEC-001 is closed.
+SPEC-001 (`close`), SPEC-002 (`start`), SPEC-003 (`chat`) are DRAFT (RFC-001,
+DECISION-006). Per-invariant rows start here once they are closed.
 
 ## eng-principles standards
 
