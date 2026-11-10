@@ -75,10 +75,10 @@ by hand.
 
 | command               | what it does                                                                 |
 |-----------------------|------------------------------------------------------------------------------|
-| `phasectl start`      | Open a new session; in `orient` fuses git state + last session + last coding-agent transcript (e.g. Claude Code) into a `Resume here:` block. |
-| `phasectl chat MSG`   | Send a message under the current phase's prompt. Reads stdin as context when piped. Compresses old turns when the budget is exceeded. In `impl`/`validate` the model can call the search_symbols tool, backed directly by the indexer binary. |
+| `phasectl start`      | Open a new session. No model call: carries the last session's decision lines and last two turns verbatim; in `orient` adds live git state and a verbatim excerpt of the last coding-agent transcript (e.g. Claude Code). `--summarize` adds a model resume (may lose signal). |
+| `phasectl chat MSG`   | Send a message under the current phase's prompt. Reads stdin as context when piped. Never compresses by default; over budget it warns. `--compress` summarizes old conversation turns (may lose signal). In `impl`/`validate` the model can call the search_symbols tool, backed directly by the indexer binary. |
 | `phasectl switch`     | Change the active session's phase. Prior turns remain visible.               |
-| `phasectl close`      | Summarise the session using the `snapshot` prompt; link any `RFC-<n>` / `DECISION-<n>` tokens into the graph. |
+| `phasectl close`      | Store a deterministic snapshot (decision lines, references, last two turns, verbatim); link its `RFC-<n>` / `DECISION-<n>` tokens into the graph. `--summarize` appends a model summary (may lose signal). |
 | `phasectl status`     | Print the active session's phase, tokens, and turn count. `--json`.          |
 | `phasectl index`      | Invoke `<indexer> index <path>` and register the path. Re-index by omitting `--path`. `--register-only` for external indexers. |
 | `phasectl query SYM`  | Search the indexed symbols of a project. Standalone. `--json`.               |

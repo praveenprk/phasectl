@@ -227,16 +227,22 @@ def test_field_runner() -> None:
             check("chat uses live Git grounding", expected_git in first_chat["stdout"], first_chat["stdout"])
             second_chat = cli("chat", "Continue the deterministic design.")
             check("second design chat", second_chat["returncode"] == 0, second_chat)
-            third_chat = cli("chat", "Finalize the deterministic design.")
+            check(
+                "over budget without --compress warns and compresses nothing",
+                "nothing was compressed" in second_chat["stderr"],
+                second_chat["stderr"],
+            )
+            third_chat = cli("chat", "Finalize the deterministic design.", "--compress")
             check("third design chat", third_chat["returncode"] == 0, third_chat)
+            check(
+                "opt-in compression warns of signal loss",
+                "warning: tail compression may cause signal loss due to compression" in third_chat["stderr"],
+                third_chat["stderr"],
+            )
 
             first_close = cli("close")
             check("first close command", first_close["returncode"] == 0, first_close)
-            check(
-                "close reports deterministic reference recovery",
-                f"Recovered decision references missing from generated summary: {DECISION}" in first_close["stderr"],
-                first_close["stderr"],
-            )
+            check("default close makes no model call", "warning:" not in first_close["stderr"], first_close["stderr"])
             closed_status = cli("status", "--json")
             closed_json = json.loads(closed_status["stdout"])
             check(
@@ -255,24 +261,37 @@ def test_field_runner() -> None:
             compressed = [turn for turn in turns if turn["phase"] == "_compression"]
             check("original decision turn survives compression", len(original) == 1 and original[0]["compressed"] == 1, original)
             check("compression produced provenance rows", bool(compressed) and all(turn["origin"] == "compression" for turn in compressed))
-            expected_summary = (
-                "FIELD SNAPSHOT WITHOUT IDENTIFIER\n\n"
-                "Decision references recovered from original turns (historical occurrence only; "
-                "not acceptance, implementation, or verification):\n"
-                f"- {DECISION}"
+            summary = session["final_summary"]
+            check(
+                "close stores deterministic snapshot with the compressed decision line",
+                summary.startswith("SNAPSHOT ")
+                and f"- [user] Choose {DECISION} for append-only history." in summary
+                and f"REFERENCES: {DECISION}\n" in summary
+                and "FIELD SNAPSHOT" not in summary
+                and "FIELD COMPRESSION" not in summary,
+                summary,
             )
-            check("close stores recovered summary verbatim", session["final_summary"] == expected_summary, session["final_summary"])
             check("close records final phase", session["closing_phase"] == "design" and session["closed_at"])
 
             graph = json.loads(graph_path.read_text(encoding="utf-8"))
             decision_nodes = [node for node in graph["nodes"] if node.get("id") == DECISION]
             check("decision reference reaches isolated graph", len(decision_nodes) == 1, decision_nodes)
 
-            second_open = cli("start", "--phase", "orient")
+            second_open = cli("start", "--phase", "orient", "--summarize")
             check("second lifecycle start", second_open["returncode"] == 0, second_open)
+            check(
+                "opt-in resume warns of signal loss",
+                "warning: resume synthesis may cause signal loss due to compression" in second_open["stderr"],
+                second_open["stderr"],
+            )
+            check(
+                "prior decision carried verbatim",
+                f"- [user] Choose {DECISION} for append-only history." in second_open["stdout"],
+                second_open["stdout"],
+            )
             history_chat = cli("chat", "Inspect historical provenance.", "--prior-session-memory")
             check("historical provenance chat", history_chat["returncode"] == 0, history_chat)
-            second_close = cli("close")
+            second_close = cli("close", "--summarize")
             check("second close command", second_close["returncode"] == 0, second_close)
             repeated_close = cli("close")
             check("close without active session returns 3", repeated_close["returncode"] == 3, repeated_close)
@@ -287,12 +306,17 @@ def test_field_runner() -> None:
             ]
             check("all model calls use source-backed mock", len(chats) == 4 and all(SOURCE / "phasectl" in Path(event["phasectl_source"]).parents for event in events))
             check("tool and MCP execution remains disabled", all(not event["tools"] for event in chats))
-            check("resume and compression boundaries exercised", len(resumes) == 2 and len(tail_compressions) == 2 and len(snapshots) == 2)
-            check("resume provenance is wrapped", "[MODEL-DERIVED RESUME SYNTHESIS (non-authoritative)]" in _message_text(chats[0]))
+            check(
+                "model packaging runs only where opted in",
+                len(resumes) == 1 and len(tail_compressions) == 1 and len(snapshots) == 1,
+                {"resume": len(resumes), "tail": len(tail_compressions), "snapshot": len(snapshots)},
+            )
+            check("first session had no model resume", "[MODEL-DERIVED RESUME" not in _message_text(chats[0]))
+            check("resume provenance is wrapped", "[MODEL-DERIVED RESUME SYNTHESIS (non-authoritative)]" in _message_text(chats[-1]))
             check("compression provenance is wrapped", any("[MODEL-DERIVED COMPRESSED SUMMARY (non-authoritative)]" in _message_text(event) for event in chats))
             check("prior-session provenance is wrapped", "[HISTORICAL CONTEXT: prior session (non-authoritative)]" in _message_text(chats[-1]))
             check("close receives compressed original", DECISION in snapshots[0]["content"])
-            check("close excludes synthetic compression rows", "[COMPRESSED SUMMARY:" not in snapshots[0]["content"])
+            check("close excludes its own synthetic compression rows", "[_compression]" not in snapshots[0]["content"])
             report["provider_event_counts"] = {
                 "chat": len(chats),
                 "resume": len(resumes),
