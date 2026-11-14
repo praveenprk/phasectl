@@ -26,6 +26,7 @@ from .handoff import (
     build_prior_turns_block,
     build_snapshot,
     format_live_git_block,
+    HISTORICAL_ORIGINS,
 )
 from .api import (
     chat as api_chat,
@@ -526,7 +527,11 @@ def start(
 
     progress.done()
     if fused and (git_state or get_index_path(project, config)):
-        print(format_live_git_block(git_state))
+        history = [
+            t["content"] for t in store.get_turns(session.id)
+            if t.get("origin") in HISTORICAL_ORIGINS
+        ]
+        print(format_live_git_block(git_state, history))
     print(prior_decisions)
     print(prior_last_turns)
     if agent_path and agent_body:
@@ -664,10 +669,9 @@ def chat(
         git_state = get_git_state(repo_path_obj) if repo_path_obj else {}
     except Exception:
         git_state = {}
-    current_git_state = format_live_git_block(git_state)
-    print(current_git_state)
 
     messages = []
+    prior_session_memory_injection = ""
     for turn in turns:
         if turn["compressed"]:
             continue
@@ -687,6 +691,7 @@ def chat(
             if prior:
                 injection = build_injection_block(prior[0], prior[1])
                 if injection and injection.strip():
+                    prior_session_memory_injection = injection
                     messages.append(
                         {
                             "role": "user",
@@ -700,6 +705,16 @@ def chat(
         except Exception:
             pass
 
+    history_sent = [
+        turn["content"] for turn in turns
+        if not turn["compressed"]
+        and turn.get("origin") in HISTORICAL_ORIGINS
+        and (prior_session_memory or not _is_prior_session_memory_turn(turn))
+    ]
+    if prior_session_memory_injection:
+        history_sent.append(prior_session_memory_injection)
+    current_git_state = format_live_git_block(git_state, history_sent)
+    print(current_git_state)
     messages.append({"role": "user", "content": current_git_state})
 
     messages.append({"role": "user", "content": full_message})
