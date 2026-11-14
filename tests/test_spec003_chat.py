@@ -193,3 +193,30 @@ def test_inv_003_09_chat_sends_full_live_git_block(env, monkeypatch):
     assert result.exit_code == 0, result.output
     assert sent[0][-2]["content"] == block
     assert result.stdout.startswith(block + "\n")
+
+
+def test_inv_003_10_chat_history_conflict_line(env, monkeypatch):
+    store, sent = env
+    session = open_session(store, "proj", "design")
+    _add(store, session.id, "system", "PRIOR_LAST_TURNS (historical…):\n[user]: on feat/storage", origin="prior_turns")
+    _add(store, session.id, "system", "old summary on fix/legacy-x", origin="prior_session")
+    _add(store, session.id, "user", "I just left fix/other-y")
+    monkeypatch.setattr("phasectl.cli.get_git_state", lambda path: {
+        "branch": "feat/importer", "dirty": False, "dirty_count": 0, "status_lines": [],
+        "last_commit": {"hash": "189dad5", "subject": "s", "when": "now"},
+        "local_branches": ["feat/storage", "feat/importer", "fix/legacy-x", "fix/other-y"],
+    })
+    _forbid_compression(monkeypatch)
+
+    assert _chat("where are we?").exit_code == 0
+    git_block = sent[0][-2]["content"]
+    assert git_block.splitlines()[-1] == (
+        "HISTORY_VS_LIVE: historical context mentions branch feat/storage; "
+        "the live branch is feat/importer."
+    )
+
+    assert _chat("again", "--prior-session-memory").exit_code == 0
+    assert sent[1][-2]["content"].splitlines()[-1] == (
+        "HISTORY_VS_LIVE: historical context mentions branch feat/storage, fix/legacy-x; "
+        "the live branch is feat/importer."
+    )
