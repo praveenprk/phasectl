@@ -20,6 +20,14 @@ CURRENT_GIT_CHANGES (git status --porcelain, verbatim):
 
 Any value git cannot supply prints `unavailable` (`CURRENT_GIT_HEAD: unavailable`, `CURRENT_GIT_CHANGES: unavailable`). A clean tree prints `CURRENT_GIT_CHANGES: none`. At most 50 porcelain lines are listed; beyond that the block ends with `… (<k> more; run git status)`.
 
+The block ends with a **history conflict line** when the historical context sent with it (the `prior_decisions`, `prior_turns`, `agent_context` and, when included, `prior_session` turns) names a local branch other than the live one:
+
+```
+HISTORY_VS_LIVE: historical context mentions branch <b1>[, <b2>…]; the live branch is <live>.
+```
+
+A branch is "named" when its full name appears as a token (not inside a longer path or word). Local branches come from `git for-each-ref refs/heads`. Names that are a single plain word (letters only, e.g. `main`, `dev`) are not matched, so ordinary prose does not trigger the line. No conflict, or branches unavailable → no line.
+
 ## Stored handoff turns (role `system`, in this order)
 
 | Origin | When | Content |
@@ -54,6 +62,7 @@ INV-002-08 — With `--summarize`, each model step MUST print `warning: <step> m
 INV-002-09 — With `--summarize`, a failed model step MUST NOT stop `start`. The step's failure is reported on stderr and no turn is stored for it. Verified by: test_inv_002_09_summarize_failure_is_reported_not_stored
 INV-002-10 — `CURRENT_GIT_STATE` MUST come from live git and print `unavailable` for any field git cannot supply, never a substitute value (DECISION-005, backfill). Verified by: tests/test_context_boundary_v0.py::test_start_unavailable_working_tree_status_displays_unavailable, test_start_preserves_git_state_when_resume_synthesis_fails
 INV-002-12 — The live git block MUST name HEAD's subject and every changed path as git reports it (up to 50 lines, then an explicit count of the rest). None of it may come from stored history. Verified by: test_inv_002_12_live_git_block_names_head_and_changes
+INV-002-13 — When the historical turns stored by `start` name a local branch other than the live one, the live git block MUST end with the history conflict line, listing those branches in first-mention order. Otherwise the line MUST be absent. Verified by: test_inv_002_13_history_conflict_line
 INV-002-11 — The refusals in the contract MUST exit 1 and change nothing. Verified by: test_inv_002_11_refusals
 
 ## Out of scope
