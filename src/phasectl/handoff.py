@@ -152,7 +152,28 @@ def build_prior_turns_block(prior_session: dict | None, prior_turns: list[dict] 
 _MAX_STATUS_LINES = 50
 
 
-def format_live_git_block(git_state: dict) -> str:
+HISTORICAL_ORIGINS = ("prior_decisions", "prior_turns", "agent_context", "prior_session")
+
+
+def history_conflict_line(git_state: dict, history_texts: list[str]) -> str:
+    """SPEC-002 INV-002-13: name local branches that history mentions but that are not live."""
+    live = git_state.get("branch")
+    branches = git_state.get("local_branches") or []
+    text = "\n".join(history_texts)
+    found = []
+    for name in branches:
+        if name == live or name.isalpha():
+            continue
+        match = re.search(rf"(?<![\w./-]){re.escape(name)}(?![\w/-])", text)
+        if match:
+            found.append((match.start(), name))
+    if not live or not found:
+        return ""
+    names = ", ".join(name for _, name in sorted(found))
+    return f"HISTORY_VS_LIVE: historical context mentions branch {names}; the live branch is {live}."
+
+
+def format_live_git_block(git_state: dict, history_texts: list[str] | None = None) -> str:
     """SPEC-002 live git block. Computed from git at invocation; never from history."""
     if not git_state.get("branch"):
         return "CURRENT_GIT_STATE: unavailable"
@@ -186,4 +207,7 @@ def format_live_git_block(git_state: dict) -> str:
         rest = len(status_lines) - _MAX_STATUS_LINES
         if rest > 0:
             lines.append(f"… ({rest} more; run git status)")
+    conflict = history_conflict_line(git_state, history_texts or [])
+    if conflict:
+        lines.append(conflict)
     return "\n".join(lines)

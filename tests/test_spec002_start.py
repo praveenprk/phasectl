@@ -388,3 +388,31 @@ def test_inv_002_12_clean_and_unavailable_states():
         "CURRENT_GIT_CHANGES: unavailable",
     ]
     assert format_live_git_block({}) == "CURRENT_GIT_STATE: unavailable"
+
+
+def test_inv_002_13_history_conflict_line(env, monkeypatch):
+    store, _ = env
+    _closed_prior(store, [
+        ("user", "I'm on branch feat/storage. DECISION-001 sqlite. Also saw feat/storage-v2 and main."),
+        ("assistant", "ok, docs/feat/storage-notes is unrelated"),
+    ])
+    git = dict(LIVE_GIT, local_branches=["main", "feat/storage", "feat/importer", "fix/unused"])
+    monkeypatch.setattr("phasectl.cli.get_git_state", lambda path: dict(git))
+    _forbid_models(monkeypatch)
+
+    out = _start("--phase", "orient").stdout
+
+    assert ("HISTORY_VS_LIVE: historical context mentions branch feat/storage; "
+            "the live branch is feat/importer.") in out.splitlines()
+    assert "main" not in [l for l in out.splitlines() if l.startswith("HISTORY_VS_LIVE")][0].split(";")[0]
+
+
+def test_inv_002_13_no_line_without_conflict(env, monkeypatch):
+    store, _ = env
+    _closed_prior(store, [("user", "We are on feat/importer. DECISION-001")])
+    git = dict(LIVE_GIT, local_branches=["main", "feat/storage", "feat/importer"])
+    monkeypatch.setattr("phasectl.cli.get_git_state", lambda path: dict(git))
+    _forbid_models(monkeypatch)
+
+    out = _start("--phase", "orient").stdout
+    assert "HISTORY_VS_LIVE" not in out
