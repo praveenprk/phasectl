@@ -2,15 +2,23 @@
 # commit-msg — enforce ENG-STD-005 §1 on the subject line:
 #   type(scope): description — ANCHOR[, ANCHOR...]
 # Every anchor must resolve to a governed entry (see ./anchors).
-# Any co-authored-by line is refused (ENG-STD-005 §1.4; stricter than required).
+# Any co-authored-by line or tool attribution line ("Generated with [Tool](…)")
+# is refused (ENG-STD-005 §1.4; stricter than required).
+#
+# The same script runs as the local hook and on the git host
+# (hooks/check-pr, .github/workflows/commit-check.yml, ENG-DEC-009).
 #
 # Substrate: POSIX sh, git, grep, sed, awk, tr.
-# Config (plain text, next to this file): types, anchors.
+# Config (plain text): types, anchors. Read from $ENG_HOOKS_CONFIG if set,
+# else from the directory of this file.
+# Issue anchors (#N): allowed when `anchors` has an ISSUE line. With
+# $ENG_ISSUES_FILE set (one number per line, as the host lists them), #N
+# must be listed there; without it (offline), #N is accepted.
 # Exit: 0 accepted, 1 refused (reason on stderr).
 
 set -u
 
-dir=$(dirname "$0")
+dir=${ENG_HOOKS_CONFIG:-$(dirname "$0")}
 msgfile=$1
 
 refuse() {
@@ -39,6 +47,10 @@ if printf '%s\n' "$body" | grep -qi 'co-authored[- ]by'; then
     refuse "co-author line present" "accountability belongs to the human who signs (ENG-P-11)"
 fi
 
+if printf '%s\n' "$body" | grep -qiE '^[^[:alnum:]]*generated (with|by) \[[^]]+\]\('; then
+    refuse "tool attribution line present" "accountability belongs to the human who signs (ENG-P-11)"
+fi
+
 types=$(grep -v '^#' "$dir/types" | grep . | paste -sd'|' -)
 
 if ! printf '%s\n' "$subject" | grep -qE "^($types)\([A-Za-z0-9_.-]+\): .{10,} (—|-) .+$"; then
@@ -55,7 +67,18 @@ esac
 
 anchors=$(printf '%s\n' "$refs" | tr -cs 'A-Z0-9-' '\n' | grep -E '^[A-Z]+(-[A-Z]+)*(-[0-9]+)+$')
 
-[ -n "$anchors" ] || refuse "no anchor" "got: $refs"
+issues=
+if awk '!/^#/ && $1 == "ISSUE" { f = 1 } END { exit !f }' "$dir/anchors"; then
+    issues=$(printf '%s\n' "$refs" | grep -oE '#[0-9]+' | tr -d '#')
+fi
+
+[ -n "$anchors$issues" ] || refuse "no anchor" "got: $refs"
+
+for issue in $issues; do
+    if [ -n "${ENG_ISSUES_FILE:-}" ] && ! grep -qx "$issue" "$ENG_ISSUES_FILE"; then
+        refuse "anchor not found: #$issue" "not an issue or pull request of this repository"
+    fi
+done
 
 for anchor in $anchors; do
     type=$(printf '%s\n' "$anchor" | sed 's/-[0-9].*$//')

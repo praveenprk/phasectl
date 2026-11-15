@@ -80,9 +80,9 @@ SPEC says : ENG-STD-005 §1.3 — "Every commit MUST carry at least one anchor t
 Code does : b3a2376 "fix: carry prior decisions into new sessions deterministically" (PR #11) landed on main at 2026-11-08T13:30Z, after adoption (PR #12, 13:18Z), with no anchor. It was written before adoption. GitHub's merge creates the commit server-side, so the local commit-msg hook never ran. Nothing on the host checks commit subjects.
 Severity  : HIGH (proposed; governor to confirm)
 Impact    : One post-adoption commit on main has no machine-traceable reason. The same path is open for every PR: host merges bypass commit-msg.
-Fix       : History is not rewritten. This entry is b3a2376's anchor. Close the path: CI runs scripts/hooks/commit-msg on every PR commit subject and on the PR title used for squash merges (with V-ENG-004-02).
-When      : With the CI change for V-ENG-004-02.
-Status    : OPEN
+Fix       : History is not rewritten. This entry is b3a2376's anchor. Path closed: .github/workflows/commit-check.yml calls eng-principles' shared check (ENG-DEC-009, ENG-STD-005 §1.5) on the PR title, description and every commit, and the ruleset `main-branch-integrity` requires `commit-check / check`.
+When      : 2026-11-16
+Status    : RESOLVED (forward only)
 Anchor    : DECISION-001
 
 ### V-ENG-002-02
