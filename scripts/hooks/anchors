@@ -10,3 +10,8 @@ V-ENG     docs/VIOLATIONS.md   ###
 RFC       docs/rfc/*.md        #
 SPEC      docs/specs/*.md      #
 INV       -                    -
+ENG-DEC   -                    -
+ENG-P     -                    -
+ENG-STD   -                    -
+ENG-V     -                    -
+ISSUE     -                    -

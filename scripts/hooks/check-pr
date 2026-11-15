@@ -1,0 +1,44 @@
+#!/bin/sh
+# check-pr — run commit-msg over everything a pull request brings to the
+# default branch: the PR title (a squash merge makes it the commit subject),
+# every non-merge commit (a rebase merge brings them as they are), and the
+# PR description (a squash merge makes it the commit body). ENG-STD-005 §1.5.
+#
+# Runs on the git host (.github/workflows/commit-check.yml) and locally.
+# Inputs from the environment, never from the command line, so text from
+# the PR cannot reach a shell:
+#   PR_TITLE, PR_BODY    the pull request's title and description
+#   BASE, HEAD           commit range; every non-merge commit in BASE..HEAD
+#   ENG_HOOKS_CONFIG     directory with the project's types and anchors
+#   ENG_ISSUES_FILE      optional: existing issue/PR numbers, one per line
+# Substrate: POSIX sh, git, grep. Exit: 0 all pass, 1 any refused.
+
+set -u
+
+here=$(cd "$(dirname "$0")" && pwd -P)
+tmp=$(mktemp -d) || exit 1
+trap 'rm -rf "$tmp"' EXIT INT TERM
+
+failed=0
+n=0
+
+run() {   # run <label> <message file>
+    n=$((n + 1))
+    if out=$(sh "$here/commit-msg" "$2" 2>&1); then
+        printf 'ok %s\n' "$1"
+    else
+        printf 'refused %s\n%s\n' "$1" "$out" >&2
+        failed=1
+    fi
+}
+
+printf '%s\n\n%s\n' "${PR_TITLE:-}" "${PR_BODY:-}" > "$tmp/pr"
+run "PR title and description" "$tmp/pr"
+
+for sha in $(git rev-list --no-merges --reverse "${BASE:?BASE not set}..${HEAD:?HEAD not set}"); do
+    git log -1 --format=%B "$sha" > "$tmp/commit"
+    run "commit $(git log -1 --format='%h %s' "$sha" | cut -c1-72)" "$tmp/commit"
+done
+
+[ "$failed" -eq 0 ] || exit 1
+printf 'check-pr: %d checked, all pass\n' "$n"

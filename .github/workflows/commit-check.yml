@@ -1,0 +1,21 @@
+name: Commit check
+
+# The PR title, description and every commit a PR brings to main follow
+# eng-principles ENG-STD-005 §1 (format, anchors that resolve, no co-author
+# or tool attribution). The check is eng-principles' shared workflow,
+# pinned to a commit (ENG-DEC-009). phasectl's policy is
+# scripts/hooks/types and scripts/hooks/anchors.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  commit-check:
+    uses: praveenprk/eng-principles/.github/workflows/commit-check.yml@74e7e7681063b9922f96f79149bfb7eb104cd108
+    with:
+      config: scripts/hooks

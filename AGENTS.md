@@ -9,7 +9,8 @@ phasectl follows eng-principles (docs/DECISIONS.md DECISION-001).
 - Before work: read docs/DECISIONS.md and docs/VIOLATIONS.md. The decision or defect may already be recorded.
 - Every change traces to an anchor: DECISION-NNN, V-…, RFC-NNN, SPEC-NNN, or INV-NNN-NN. No anchor means no work.
 - Install the hooks: `scripts/hooks/install`. Never bypass them (`--no-verify` is a violation).
-- Branch `type/ANCHOR-description`. Commit `type(scope): description — ANCHOR`. No co-author or AI attribution lines.
+- On GitHub, `commit-check` runs eng-principles' shared check on the PR title, description and every commit (ENG-DEC-009). It is required to merge into `main`.
+- Branch `type/ANCHOR-description`. Commit `type(scope): description — ANCHOR`. No co-author, AI attribution or "Generated with" lines in commits or PR descriptions. A PR description written by an automated contributor ends with `Session-Id: <session id>`.
 - A violation fix updates docs/VIOLATIONS.md in the same commit.
 - Do not mark anything `conformant` in the ICS without a cited test or commit.
 - Codebase rule (DECISION-002): phasectl never writes to the user's codebase. Do not add code that does.
