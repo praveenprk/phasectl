@@ -1,4 +1,3 @@
-import pytest
 
 from phasectl.resume import build_resume_block
 

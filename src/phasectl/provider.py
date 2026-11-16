@@ -20,7 +20,6 @@ from typing import Any
 
 from .auth import InvalidAPIKey, NoAPIKey, get_api_key
 
-
 DEFAULT_COMPRESS_PROMPT = (
     "You are a session compression tool. "
     "Compress the following conversation turns into a concise summary "
@@ -80,7 +79,7 @@ class AnthropicProvider(LLMProvider):
         self._client = Anthropic(**kwargs)
 
     def chat(self, system, messages, tools, temperature, max_tokens):
-        from anthropic import AuthenticationError, NOT_GIVEN
+        from anthropic import NOT_GIVEN, AuthenticationError
 
         native_messages = _to_anthropic_messages(messages)
         try:

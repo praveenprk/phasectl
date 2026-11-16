@@ -3,7 +3,6 @@ from typing import Callable
 
 from .api import compress
 
-
 SEED_SYSTEM_PROMPT = (
     "You extract the SIGNAL from a document for an engineer's working context. "
     "Preserve: concrete decisions, arguments made, references cited, open questions, "

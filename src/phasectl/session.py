@@ -1,7 +1,7 @@
-from dataclasses import dataclass
-from typing import Optional
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Optional
 
 from .store import SQLiteStore
 

@@ -12,10 +12,10 @@ import pytest
 
 from phasectl.api import extract_rfcs_and_decisions
 from phasectl.cli import close
-from phasectl.session import open_session
-from phasectl.store import SQLiteStore
 from phasectl.context import estimate_tokens
 from phasectl.graph import extract_decision_references
+from phasectl.session import open_session
+from phasectl.store import SQLiteStore
 
 
 def test_close_includes_compressed_original_decision(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

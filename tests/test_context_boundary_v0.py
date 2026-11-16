@@ -1,13 +1,10 @@
-import os
 
-import pytest
 from typer.testing import CliRunner
 
 from phasectl.cli import app
+from phasectl.context import build_injection_block
 from phasectl.session import open_session
 from phasectl.store import SQLiteStore
-from phasectl.context import build_injection_block
-
 
 LIVE_BRANCH = "docs/SPEC-032-caller-scope-binding"
 HIST_BRANCH = "feat/RFC-028-scope-resolution-contract"
@@ -351,7 +348,7 @@ def test_git_state_head_lookup_failure_is_explicit(tmp_path, monkeypatch):
 
 def test_start_unavailable_working_tree_status_displays_unavailable(tmp_path, monkeypatch):
     db_path = tmp_path / "sessions.db"
-    store = SQLiteStore(str(db_path))
+    SQLiteStore(str(db_path))
     repo_path = tmp_path / "repo"
     repo_path.mkdir()
 
@@ -485,9 +482,8 @@ def test_legacy_unknown_origin_rows_survive_migration(tmp_path):
     conn.close()
 
     store = SQLiteStore(str(db_path))
-    store2 = SQLiteStore(str(db_path))
+    SQLiteStore(str(db_path))
 
-    turns = store.get_turns("s1") if False else None
     cursor = store.conn.execute("SELECT * FROM turns WHERE session_id='s1'")
     rows = cursor.fetchall()
     assert len(rows) == 1

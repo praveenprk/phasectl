@@ -1,6 +1,6 @@
+import tomllib
 from dataclasses import dataclass, field
 from importlib import resources
-import tomllib
 
 from ..config import get_config_dir
 
