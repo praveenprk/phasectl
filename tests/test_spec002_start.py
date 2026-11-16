@@ -11,8 +11,14 @@ from phasectl.session import open_session
 from phasectl.store import SQLiteStore
 
 LIVE_GIT = {
-    "branch": "feat/importer", "dirty": True, "dirty_count": 2,
-    "last_commit": {"hash": "abc1234", "subject": "feat(importer): parse csv rows", "when": "now"},
+    "branch": "feat/importer",
+    "dirty": True,
+    "dirty_count": 2,
+    "last_commit": {
+        "hash": "abc1234",
+        "subject": "feat(importer): parse csv rows",
+        "when": "now",
+    },
 }
 AGENT_CAPS = "last messages, each cut to 1200 chars, at most 4000 chars"
 
@@ -51,8 +57,12 @@ def env(tmp_path, monkeypatch):
 
 def _add(store, session_id, role, content, origin="__role__"):
     store.add_turn(
-        session_id=session_id, phase="design", role=role, content=content,
-        token_estimate=estimate_tokens(content), origin=role if origin == "__role__" else origin,
+        session_id=session_id,
+        phase="design",
+        role=role,
+        content=content,
+        token_estimate=estimate_tokens(content),
+        origin=role if origin == "__role__" else origin,
     )
 
 
@@ -70,7 +80,9 @@ def _start(*args, **kwargs):
 
 def _stored(store, origin):
     active = store.get_active_session("proj")
-    return [t["content"] for t in store.get_turns(active["id"]) if t["origin"] == origin]
+    return [
+        t["content"] for t in store.get_turns(active["id"]) if t["origin"] == origin
+    ]
 
 
 def _decisions_header(session_id):
@@ -87,12 +99,20 @@ def _turns_header(session_id):
     )
 
 
-def _agent_transcript(tmp_path, text="agent was editing importer.py, next: wire import"):
+def _agent_transcript(
+    tmp_path, text="agent was editing importer.py, next: wire import"
+):
     path = tmp_path / "agent.jsonl"
-    path.write_text(json.dumps({
-        "type": "user", "timestamp": "2026-11-08T10:00:00",
-        "message": {"role": "user", "content": text},
-    }) + "\n")
+    path.write_text(
+        json.dumps(
+            {
+                "type": "user",
+                "timestamp": "2026-11-08T10:00:00",
+                "message": {"role": "user", "content": text},
+            }
+        )
+        + "\n"
+    )
     return str(path)
 
 
@@ -114,10 +134,13 @@ def test_inv_002_01_no_model_call_by_default(env, monkeypatch):
 
 def test_inv_002_02_prior_decisions_from_source_turns(env, monkeypatch):
     store, _ = env
-    prior = _closed_prior(store, [
-        ("user", "Plan:\n- DECISION-001 sqlite, not JSON\nnoise line"),
-        ("assistant", "Confirmed DECISION-001 sqlite, not JSON"),
-    ])
+    prior = _closed_prior(
+        store,
+        [
+            ("user", "Plan:\n- DECISION-001 sqlite, not JSON\nnoise line"),
+            ("assistant", "Confirmed DECISION-001 sqlite, not JSON"),
+        ],
+    )
     _forbid_models(monkeypatch)
 
     result = _start("--phase", "design")
@@ -151,8 +174,11 @@ def test_inv_002_02_explicit_empty_states(env, monkeypatch):
 
 def test_inv_002_03_prior_decisions_ignore_model_summary(env, monkeypatch):
     store, _ = env
-    _closed_prior(store, [("user", "no decisions here")],
-                  summary="- Model says DECISION-900 was made")
+    _closed_prior(
+        store,
+        [("user", "no decisions here")],
+        summary="- Model says DECISION-900 was made",
+    )
     _forbid_models(monkeypatch)
 
     assert _start("--phase", "design").exit_code == 0
@@ -177,15 +203,23 @@ def test_inv_002_04_decisions_chain_across_sessions(env, monkeypatch):
 
 def test_inv_002_05_prior_turns_verbatim(env, monkeypatch):
     store, _ = env
-    prior = _closed_prior(store, [
-        ("user", "u1"), ("assistant", "a1"),
-        ("user", "next step:\nimplement import"), ("assistant", "a2"),
-    ])
+    prior = _closed_prior(
+        store,
+        [
+            ("user", "u1"),
+            ("assistant", "a1"),
+            ("user", "next step:\nimplement import"),
+            ("assistant", "a2"),
+        ],
+    )
     _forbid_models(monkeypatch)
 
     result = _start("--phase", "design")
 
-    expected = _turns_header(prior.id) + "\n[user]: next step:\nimplement import\n[assistant]: a2"
+    expected = (
+        _turns_header(prior.id)
+        + "\n[user]: next step:\nimplement import\n[assistant]: a2"
+    )
     assert _stored(store, "prior_turns") == [expected]
     assert expected in result.stdout
 
@@ -216,13 +250,18 @@ def test_inv_002_06_agent_context_verbatim_excerpt(env, monkeypatch):
     assert result.exit_code == 0, result.output
     [stored] = _stored(store, "agent_context")
     header, body = stored.split("\n", 1)
-    assert header == f"AGENT_CONTEXT (external, verbatim excerpt of {agent}: {AGENT_CAPS}; not verified):"
+    assert (
+        header
+        == f"AGENT_CONTEXT (external, verbatim excerpt of {agent}: {AGENT_CAPS}; not verified):"
+    )
     assert "agent was editing importer.py, next: wire import" in body
     assert f"AGENT_CONTEXT: {len(body)} chars from {agent}" in result.stdout
     assert "agent was editing importer.py" not in result.stdout
 
 
-@pytest.mark.parametrize("args", [["--phase", "orient", "--no-fuse"], ["--phase", "design"]])
+@pytest.mark.parametrize(
+    "args", [["--phase", "orient", "--no-fuse"], ["--phase", "design"]]
+)
 def test_inv_002_06_no_agent_context_outside_fused_orient(env, monkeypatch, args):
     store, tmp_path = env
     agent = _agent_transcript(tmp_path)
@@ -245,8 +284,14 @@ def test_inv_002_07_seed_verbatim(env, monkeypatch):
 
     assert result.exit_code == 0, result.output
     seeds = _stored(store, "seed")
-    assert seeds[0] == "SEED notes.md (supplied, verbatim; not verified):\nSeed body with DECISION-1 detail\nsecond line"
-    assert seeds[1].split("\n", 1)[0] == "SEED big.txt (supplied, verbatim; not verified; TRUNCATED to first 200KB):"
+    assert (
+        seeds[0]
+        == "SEED notes.md (supplied, verbatim; not verified):\nSeed body with DECISION-1 detail\nsecond line"
+    )
+    assert (
+        seeds[1].split("\n", 1)[0]
+        == "SEED big.txt (supplied, verbatim; not verified; TRUNCATED to first 200KB):"
+    )
     assert seeds[1].split("\n", 1)[1] == "y" * 200_000
 
 
@@ -263,13 +308,24 @@ def test_inv_002_08_summarize_adds_labelled_turns_and_warns(env, monkeypatch):
     result = _start("--phase", "orient", "--seed", str(seed), "--summarize", "--quiet")
 
     assert result.exit_code == 0, result.output
-    assert "warning: resume synthesis may cause signal loss due to compression" in result.stderr
-    assert "warning: seed gist may cause signal loss due to compression" in result.stderr
+    assert (
+        "warning: resume synthesis may cause signal loss due to compression"
+        in result.stderr
+    )
+    assert (
+        "warning: seed gist may cause signal loss due to compression" in result.stderr
+    )
     assert _stored(store, "resume") == ["RESUME TEXT"]
     assert _stored(store, "seed_gist") == ["GIST TEXT"]
-    assert _stored(store, "prior_decisions") == [_decisions_header(prior.id) + "\n- [user] DECISION-001 sqlite"]
-    assert _stored(store, "prior_turns") == [_turns_header(prior.id) + "\n[user]: DECISION-001 sqlite\n[assistant]: ok"]
-    assert _stored(store, "seed") == ["SEED notes.md (supplied, verbatim; not verified):\nseed body"]
+    assert _stored(store, "prior_decisions") == [
+        _decisions_header(prior.id) + "\n- [user] DECISION-001 sqlite"
+    ]
+    assert _stored(store, "prior_turns") == [
+        _turns_header(prior.id) + "\n[user]: DECISION-001 sqlite\n[assistant]: ok"
+    ]
+    assert _stored(store, "seed") == [
+        "SEED notes.md (supplied, verbatim; not verified):\nseed body"
+    ]
     assert len(_stored(store, "agent_context")) == 1
     assert "[MODEL-DERIVED RESUME (non-authoritative)]\nRESUME TEXT" in result.stdout
 
@@ -324,9 +380,16 @@ def test_stdout_order(env, monkeypatch):
     _forbid_models(monkeypatch)
 
     out = _start("--phase", "orient").stdout
-    positions = [out.index(marker) for marker in (
-        "CURRENT_GIT_STATE:", "PRIOR_DECISIONS", "PRIOR_LAST_TURNS", "AGENT_CONTEXT:", "session opened:",
-    )]
+    positions = [
+        out.index(marker)
+        for marker in (
+            "CURRENT_GIT_STATE:",
+            "PRIOR_DECISIONS",
+            "PRIOR_LAST_TURNS",
+            "AGENT_CONTEXT:",
+            "session opened:",
+        )
+    ]
     assert positions == sorted(positions)
     assert out.rstrip("\n").splitlines()[-1].startswith("session opened: ")
 
@@ -336,8 +399,10 @@ def _git_repo(tmp_path):
 
     repo = tmp_path / "live"
     repo.mkdir()
+
     def run(*a):
         return subprocess.run(["git", *a], cwd=repo, check=True, capture_output=True)
+
     run("init", "-q", "-b", "main")
     run("config", "user.email", "t@example.invalid")
     run("config", "user.name", "t")
@@ -348,8 +413,13 @@ def _git_repo(tmp_path):
     (repo / "notes.txt").write_text("n\n")
     for i in range(55):
         (repo / f"zz{i:02d}.txt").write_text("x\n")
-    head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=repo,
-                          check=True, capture_output=True, text=True).stdout.strip()
+    head = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
     return repo, head
 
 
@@ -366,9 +436,12 @@ def test_inv_002_12_live_git_block_names_head_and_changes(env, monkeypatch, tmp_
 
     lines = out.splitlines()
     i = lines.index(f"CURRENT_GIT_HEAD: {head} feat(importer): parse csv rows")
-    assert lines[i - 1] == f"CURRENT_GIT_STATE: branch=main dirty=True dirty_count=57 head={head}"
+    assert (
+        lines[i - 1]
+        == f"CURRENT_GIT_STATE: branch=main dirty=True dirty_count=57 head={head}"
+    )
     assert lines[i + 1] == "CURRENT_GIT_CHANGES (git status --porcelain, verbatim):"
-    listed = lines[i + 2:i + 52]
+    listed = lines[i + 2 : i + 52]
     assert listed[0] == " M cli.py"
     assert "?? notes.txt" in listed
     assert lines[i + 52] == "… (7 more; run git status)"
@@ -377,10 +450,16 @@ def test_inv_002_12_live_git_block_names_head_and_changes(env, monkeypatch, tmp_
 def test_inv_002_12_clean_and_unavailable_states():
     from phasectl.handoff import format_live_git_block
 
-    clean = {"branch": "main", "dirty": False, "dirty_count": 0, "status_lines": [],
-             "last_commit": {"hash": "abc1234", "subject": "s", "when": "now"}}
+    clean = {
+        "branch": "main",
+        "dirty": False,
+        "dirty_count": 0,
+        "status_lines": [],
+        "last_commit": {"hash": "abc1234", "subject": "s", "when": "now"},
+    }
     assert format_live_git_block(clean).splitlines()[1:] == [
-        "CURRENT_GIT_HEAD: abc1234 s", "CURRENT_GIT_CHANGES: none",
+        "CURRENT_GIT_HEAD: abc1234 s",
+        "CURRENT_GIT_CHANGES: none",
     ]
     broken = {"branch": "main", "dirty": None, "dirty_count": None, "last_commit": None}
     assert format_live_git_block(broken).splitlines() == [
@@ -393,19 +472,34 @@ def test_inv_002_12_clean_and_unavailable_states():
 
 def test_inv_002_13_history_conflict_line(env, monkeypatch):
     store, _ = env
-    _closed_prior(store, [
-        ("user", "I'm on branch feat/storage. DECISION-001 sqlite. Also saw feat/storage-v2 and main."),
-        ("assistant", "ok, docs/feat/storage-notes is unrelated"),
-    ])
-    git = dict(LIVE_GIT, local_branches=["main", "feat/storage", "feat/importer", "fix/unused"])
+    _closed_prior(
+        store,
+        [
+            (
+                "user",
+                "I'm on branch feat/storage. DECISION-001 sqlite. Also saw feat/storage-v2 and main.",
+            ),
+            ("assistant", "ok, docs/feat/storage-notes is unrelated"),
+        ],
+    )
+    git = dict(
+        LIVE_GIT, local_branches=["main", "feat/storage", "feat/importer", "fix/unused"]
+    )
     monkeypatch.setattr("phasectl.cli.get_git_state", lambda path: dict(git))
     _forbid_models(monkeypatch)
 
     out = _start("--phase", "orient").stdout
 
-    assert ("HISTORY_VS_LIVE: historical context mentions branch feat/storage; "
-            "the live branch is feat/importer.") in out.splitlines()
-    assert "main" not in [line for line in out.splitlines() if line.startswith("HISTORY_VS_LIVE")][0].split(";")[0]
+    assert (
+        "HISTORY_VS_LIVE: historical context mentions branch feat/storage; "
+        "the live branch is feat/importer."
+    ) in out.splitlines()
+    assert (
+        "main"
+        not in [
+            line for line in out.splitlines() if line.startswith("HISTORY_VS_LIVE")
+        ][0].split(";")[0]
+    )
 
 
 def test_inv_002_13_no_line_without_conflict(env, monkeypatch):

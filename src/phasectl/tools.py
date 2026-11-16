@@ -27,7 +27,10 @@ _SEARCH_SYMBOLS_TOOL = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "query": {"type": "string", "description": "Symbol name or pattern to search for."},
+            "query": {
+                "type": "string",
+                "description": "Symbol name or pattern to search for.",
+            },
         },
         "required": ["query"],
     },
@@ -57,6 +60,7 @@ class ToolExecutor:
         if not self.project:
             return None
         from .config import get_index_path
+
         path = get_index_path(self.project, config or {})
         return str(path) if path else None
 

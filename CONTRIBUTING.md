@@ -71,6 +71,7 @@ class MyProvider(LLMProvider):
     def chat(self, system, messages, tools, temperature, max_tokens):
         # return (text: str, tool_calls: list[dict])
         ...
+
     def compress(self, system, content, max_tokens) -> str: ...
 ```
 

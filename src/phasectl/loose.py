@@ -37,7 +37,9 @@ def resolve_base(repo: str, requested: str = "main") -> str | None:
                 verify = _run_git(repo, ["rev-parse", "--verify", "--quiet", candidate])
                 if verify and verify.strip():
                     return candidate
-    origin_head = _run_git(repo, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
+    origin_head = _run_git(
+        repo, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]
+    )
     if origin_head and origin_head.strip():
         return origin_head.strip()
     return None
@@ -116,24 +118,33 @@ def get_unmerged_branches(repo: str, base: str) -> list[dict]:
             parts = last.strip().split("|", 2)
             if len(parts) == 3:
                 last_rel, last_hash, last_subject = parts
-        result.append({
-            "branch": br,
-            "ahead": ahead,
-            "last_rel": last_rel,
-            "last_hash": last_hash,
-            "last_subject": last_subject,
-        })
+        result.append(
+            {
+                "branch": br,
+                "ahead": ahead,
+                "last_rel": last_rel,
+                "last_hash": last_hash,
+                "last_subject": last_subject,
+            }
+        )
     return result
 
 
 _AGE_UNITS = {
-    "second": 1, "seconds": 1,
-    "minute": 60, "minutes": 60,
-    "hour": 3600, "hours": 3600,
-    "day": 86400, "days": 86400,
-    "week": 604800, "weeks": 604800,
-    "month": 2592000, "months": 2592000,
-    "year": 31536000, "years": 31536000,
+    "second": 1,
+    "seconds": 1,
+    "minute": 60,
+    "minutes": 60,
+    "hour": 3600,
+    "hours": 3600,
+    "day": 86400,
+    "days": 86400,
+    "week": 604800,
+    "weeks": 604800,
+    "month": 2592000,
+    "months": 2592000,
+    "year": 31536000,
+    "years": 31536000,
 }
 
 
@@ -204,9 +215,9 @@ def get_worktrees(repo: str) -> list[dict]:
                 current = {}
             continue
         if line.startswith("worktree "):
-            current["path"] = line[len("worktree "):].strip()
+            current["path"] = line[len("worktree ") :].strip()
         elif line.startswith("branch "):
-            ref = line[len("branch "):].strip()
+            ref = line[len("branch ") :].strip()
             current["branch"] = ref.replace("refs/heads/", "", 1)
         elif line.startswith("bare"):
             current["bare"] = True
@@ -282,7 +293,9 @@ def _summarize_uncommitted(u: dict) -> str:
 
 
 def _sort_unmerged_coldest_first(unmerged: list[dict]) -> list[dict]:
-    return sorted(unmerged, key=lambda b: _age_seconds(b.get("last_rel", "")), reverse=True)
+    return sorted(
+        unmerged, key=lambda b: _age_seconds(b.get("last_rel", "")), reverse=True
+    )
 
 
 def render_human(data: dict, project_label: str) -> str:
@@ -296,10 +309,15 @@ def render_human(data: dict, project_label: str) -> str:
     worktrees = data.get("worktrees") or []
 
     no_upstream_set = {u["branch"] for u in unpushed if not u.get("has_upstream")}
-    ahead_upstream = [u for u in unpushed if u.get("has_upstream") and u.get("ahead", 0) > 0]
+    ahead_upstream = [
+        u for u in unpushed if u.get("has_upstream") and u.get("ahead", 0) > 0
+    ]
 
     truly_loose = (
-        (uncommitted.get("dirty")) or unmerged or stashes or ahead_upstream
+        (uncommitted.get("dirty"))
+        or unmerged
+        or stashes
+        or ahead_upstream
         or len([w for w in worktrees if not w.get("is_current")]) > 0
     )
     if not truly_loose:
@@ -324,7 +342,7 @@ def render_human(data: dict, project_label: str) -> str:
         )
 
     for s in stashes:
-        lines.append(f"  📦 {s['ref']}  \"{s['subject']}\" · {s['age_rel']}")
+        lines.append(f'  📦 {s["ref"]}  "{s["subject"]}" · {s["age_rel"]}')
 
     for u in ahead_upstream:
         lines.append(f"  ⬆ {u['branch']}  {u['ahead']} commits unpushed")

@@ -1,4 +1,3 @@
-
 from phasectl.resume import build_resume_block
 
 LIVE_BRANCH = "docs/SPEC-032-caller-scope-binding"
@@ -22,7 +21,12 @@ def test_resume_block_grounds_current_branch_in_live_git(monkeypatch):
 
 
 def test_resume_block_separates_authoritative_git_state_from_synthesis(monkeypatch):
-    git = {"branch": LIVE_BRANCH, "dirty": False, "dirty_count": 0, "last_commit": {"hash": "abc123", "subject": "s", "when": "now"}}
+    git = {
+        "branch": LIVE_BRANCH,
+        "dirty": False,
+        "dirty_count": 0,
+        "last_commit": {"hash": "abc123", "subject": "s", "when": "now"},
+    }
     session_summary = f"Prior session summary references {HIST_BRANCH}."
     agent_context = f"Agent transcript references {HIST_BRANCH}."
 

@@ -37,14 +37,19 @@ def env(tmp_path, monkeypatch):
     config = {
         "defaults": {"project": "proj"},
         "storage": {"db_path": str(db_path)},
-        "projects": {"proj": {"index_path": str(repo)}, "other": {"index_path": str(repo)}},
+        "projects": {
+            "proj": {"index_path": str(repo)},
+            "other": {"index_path": str(repo)},
+        },
     }
     monkeypatch.setattr("phasectl.cli._load_config", lambda: config)
     monkeypatch.setattr("phasectl.cli.get_git_state", lambda path: {})
     graph_calls = []
     monkeypatch.setattr(
         "phasectl.cli.persist_session_graph",
-        lambda session_id, project, summary, created_at, config: graph_calls.append(summary),
+        lambda session_id, project, summary, created_at, config: graph_calls.append(
+            summary
+        ),
     )
     return store, config, graph_calls
 
@@ -53,8 +58,12 @@ def _add(store, session_id, role, content, origin="__role__", phase="design"):
     if origin == "__role__":
         origin = role
     return store.add_turn(
-        session_id=session_id, phase=phase, role=role, content=content,
-        token_estimate=estimate_tokens(content), origin=origin,
+        session_id=session_id,
+        phase=phase,
+        role=role,
+        content=content,
+        token_estimate=estimate_tokens(content),
+        origin=origin,
     )
 
 
@@ -79,22 +88,32 @@ def test_inv_001_01_no_model_call_by_default(env, monkeypatch):
 
     assert result.exit_code == 0, result.output
     summary = store.get_session(session.id)["final_summary"]
-    assert summary.startswith(f"SNAPSHOT {session.id[:8]} (deterministic, verbatim from 2 stored turns)")
+    assert summary.startswith(
+        f"SNAPSHOT {session.id[:8]} (deterministic, verbatim from 2 stored turns)"
+    )
 
 
 def test_inv_001_02_decision_lines_verbatim_ordered_deduplicated(env, monkeypatch):
     store, _, _ = env
     session = open_session(store, "proj", "design")
-    _add(store, session.id, "system",
-         "PRIOR_DECISIONS (historical record, verbatim from session aaaaaaaa turns; "
-         "not verified against the current repository):\n- [user] DECISION-000 carried from before",
-         origin="prior_decisions")
+    _add(
+        store,
+        session.id,
+        "system",
+        "PRIOR_DECISIONS (historical record, verbatim from session aaaaaaaa turns; "
+        "not verified against the current repository):\n- [user] DECISION-000 carried from before",
+        origin="prior_decisions",
+    )
     long_tail = "x" * 500
-    _add(store, session.id, "user",
-         "Intro without refs\n- DECISION-002 cents, never floats\n"
-         f"also DECISION-001 sqlite {long_tail}\n"
-         "```\nDECISION-999 inside a fence\n```\n"
-         "**Bold** line with DECISION-003 kept as is")
+    _add(
+        store,
+        session.id,
+        "user",
+        "Intro without refs\n- DECISION-002 cents, never floats\n"
+        f"also DECISION-001 sqlite {long_tail}\n"
+        "```\nDECISION-999 inside a fence\n```\n"
+        "**Bold** line with DECISION-003 kept as is",
+    )
     _add(store, session.id, "assistant", "Confirmed: DECISION-002 cents, never floats")
     _add(store, session.id, "user", "* DECISION-002 cents, never floats")
     _forbid_models(monkeypatch)
@@ -116,10 +135,18 @@ def test_inv_001_02_decision_lines_verbatim_ordered_deduplicated(env, monkeypatc
 def test_inv_001_03_compressed_turns_still_sourced(env, monkeypatch):
     store, _, _ = env
     session = open_session(store, "proj", "design")
-    early = _add(store, session.id, "user", "Early decision: DECISION-007 append-only turns")
+    early = _add(
+        store, session.id, "user", "Early decision: DECISION-007 append-only turns"
+    )
     store.mark_turns_compressed([early])
-    _add(store, session.id, "system", "[COMPRESSED SUMMARY: details omitted]",
-         origin="compression", phase="_compression")
+    _add(
+        store,
+        session.id,
+        "system",
+        "[COMPRESSED SUMMARY: details omitted]",
+        origin="compression",
+        phase="_compression",
+    )
     _add(store, session.id, "assistant", "Continuing.")
     _forbid_models(monkeypatch)
 
@@ -137,7 +164,12 @@ def test_inv_001_04_references_complete(env, monkeypatch):
     store, _, _ = env
     session = open_session(store, "proj", "design")
     _add(store, session.id, "user", "See RFC-003 and DECISION-010.\n```\nRFC-998\n```")
-    _add(store, session.id, "assistant", "`RFC-999` is code; DECISION-011 and RFC-003 again")
+    _add(
+        store,
+        session.id,
+        "assistant",
+        "`RFC-999` is code; DECISION-011 and RFC-003 again",
+    )
     _forbid_models(monkeypatch)
 
     assert _close().exit_code == 0
@@ -148,14 +180,20 @@ def test_inv_001_04_references_complete(env, monkeypatch):
 def test_inv_001_05_last_turns_verbatim(env, monkeypatch):
     store, _, _ = env
     session = open_session(store, "proj", "design")
-    for role, content in [("user", "u1"), ("assistant", "a1"),
-                          ("user", "line one\n\nline two"), ("assistant", "a2 final")]:
+    for role, content in [
+        ("user", "u1"),
+        ("assistant", "a1"),
+        ("user", "line one\n\nline two"),
+        ("assistant", "a2 final"),
+    ]:
         _add(store, session.id, role, content)
     _forbid_models(monkeypatch)
 
     assert _close().exit_code == 0
     summary = store.get_session(session.id)["final_summary"]
-    assert summary.endswith("LAST_TURNS:\n[user]: line one\n\nline two\n[assistant]: a2 final")
+    assert summary.endswith(
+        "LAST_TURNS:\n[user]: line one\n\nline two\n[assistant]: a2 final"
+    )
 
 
 def test_inv_001_05_empty_session_is_explicit(env, monkeypatch):
@@ -175,20 +213,39 @@ def test_inv_001_05_empty_session_is_explicit(env, monkeypatch):
 def test_inv_001_06_non_source_turns_ignored(env, monkeypatch):
     store, _, _ = env
     session = open_session(store, "proj", "design")
-    for origin, ref in [("prior_session", "DECISION-050"), ("resume", "DECISION-051"),
-                        ("seed", "DECISION-052"), ("agent_context", "DECISION-054"),
-                        ("prior_turns", "DECISION-055"), ("seed_gist", "DECISION-058"),
-                        (None, "DECISION-056")]:
+    for origin, ref in [
+        ("prior_session", "DECISION-050"),
+        ("resume", "DECISION-051"),
+        ("seed", "DECISION-052"),
+        ("agent_context", "DECISION-054"),
+        ("prior_turns", "DECISION-055"),
+        ("seed_gist", "DECISION-058"),
+        (None, "DECISION-056"),
+    ]:
         _add(store, session.id, "system", f"context mentioning {ref}", origin=origin)
-    _add(store, session.id, "system", "[COMPRESSED SUMMARY: DECISION-053]",
-         origin="compression", phase="_compression")
+    _add(
+        store,
+        session.id,
+        "system",
+        "[COMPRESSED SUMMARY: DECISION-053]",
+        origin="compression",
+        phase="_compression",
+    )
     _add(store, session.id, "user", "legacy row DECISION-057", origin=None)
     _forbid_models(monkeypatch)
 
     assert _close().exit_code == 0
     summary = store.get_session(session.id)["final_summary"]
-    for ref in ("DECISION-050", "DECISION-051", "DECISION-052", "DECISION-053",
-                "DECISION-054", "DECISION-055", "DECISION-056", "DECISION-058"):
+    for ref in (
+        "DECISION-050",
+        "DECISION-051",
+        "DECISION-052",
+        "DECISION-053",
+        "DECISION-054",
+        "DECISION-055",
+        "DECISION-056",
+        "DECISION-058",
+    ):
         assert ref not in summary
     assert "- [user] legacy row DECISION-057" in summary
     assert "REFERENCES: DECISION-057\n" in summary
@@ -269,8 +326,21 @@ def test_inv_001_11_stdout_line(env, monkeypatch):
     session = open_session(store, "proj", "design")
     _add(store, session.id, "user", "one")
     _add(store, session.id, "assistant", "two")
-    _add(store, session.id, "system", "PRIOR_DECISIONS: unavailable", origin="prior_decisions")
-    _add(store, session.id, "system", "[COMPRESSED SUMMARY: x]", origin="compression", phase="_compression")
+    _add(
+        store,
+        session.id,
+        "system",
+        "PRIOR_DECISIONS: unavailable",
+        origin="prior_decisions",
+    )
+    _add(
+        store,
+        session.id,
+        "system",
+        "[COMPRESSED SUMMARY: x]",
+        origin="compression",
+        phase="_compression",
+    )
     _forbid_models(monkeypatch)
 
     result = _close()

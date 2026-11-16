@@ -38,11 +38,13 @@ def chat(
             round_ix += 1
 
             if tool_calls:
-                messages.append({
-                    "role": "assistant",
-                    "content": text,
-                    "tool_calls": tool_calls,
-                })
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": text,
+                        "tool_calls": tool_calls,
+                    }
+                )
                 for tc in tool_calls:
                     if on_tool_call is not None:
                         try:
@@ -52,11 +54,13 @@ def chat(
                     result = tool_executor.execute(
                         tc["name"], tc["arguments"], config=app_config
                     )
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc["id"],
-                        "content": result,
-                    })
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "content": result,
+                        }
+                    )
                 continue
 
             return text, tools_available
@@ -64,7 +68,9 @@ def chat(
         tool_executor.close()
 
 
-def compress(turns_text: str, app_config: dict, system_prompt: str | None = None) -> str:
+def compress(
+    turns_text: str, app_config: dict, system_prompt: str | None = None
+) -> str:
     provider = get_provider(app_config)
     return provider.compress(
         system=system_prompt or DEFAULT_COMPRESS_PROMPT,
@@ -75,6 +81,7 @@ def compress(turns_text: str, app_config: dict, system_prompt: str | None = None
 
 def extract_rfcs_and_decisions(summary: str) -> tuple[list[str], list[str]]:
     import re
+
     rfcs = [f"RFC-{m}" for m in re.findall(r"RFC-(\d+)", summary)]
     decisions = extract_decision_references(summary)
     return rfcs, decisions

@@ -20,7 +20,9 @@ def _make_repo(tmp_path):
     (repo / "file.txt").write_text("revision X\n")
     _git(repo, "add", "file.txt")
     _git(repo, "commit", "-q", "-m", "revision X")
-    sha_x = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+    sha_x = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+    ).strip()
     return repo, sha_x
 
 
@@ -32,17 +34,28 @@ def _config(tmp_path, repo, db_path):
     }
 
 
-def test_integrated_boundary_scenario_a_fresh_observation_defeats_stale_history(tmp_path, monkeypatch):
+def test_integrated_boundary_scenario_a_fresh_observation_defeats_stale_history(
+    tmp_path, monkeypatch
+):
     repo, sha_x = _make_repo(tmp_path)
     db_path = tmp_path / "sessions.db"
 
     config = _config(tmp_path, repo, db_path)
     monkeypatch.setattr("phasectl.cli._load_config", lambda: config)
     monkeypatch.setattr("phasectl.cli.get_index_path", lambda project, cfg: repo)
-    monkeypatch.setattr("phasectl.resume.compress", lambda *a, **k: "STALE: revision X remains current")
-    monkeypatch.setattr("phasectl.api.compress", lambda *a, **k: "STALE: revision X remains current")
-    monkeypatch.setattr("phasectl.context.api_compress", lambda *a, **k: "STALE: revision X remains current")
-    monkeypatch.setattr("phasectl.cli.api_compress", lambda *a, **k: "STALE: revision X remains current")
+    monkeypatch.setattr(
+        "phasectl.resume.compress", lambda *a, **k: "STALE: revision X remains current"
+    )
+    monkeypatch.setattr(
+        "phasectl.api.compress", lambda *a, **k: "STALE: revision X remains current"
+    )
+    monkeypatch.setattr(
+        "phasectl.context.api_compress",
+        lambda *a, **k: "STALE: revision X remains current",
+    )
+    monkeypatch.setattr(
+        "phasectl.cli.api_compress", lambda *a, **k: "STALE: revision X remains current"
+    )
 
     runner = CliRunner()
     start_x = runner.invoke(app, ["start", "--phase", "orient"])
@@ -53,12 +66,23 @@ def test_integrated_boundary_scenario_a_fresh_observation_defeats_stale_history(
     (repo / "file.txt").write_text("revision Y\n")
     _git(repo, "add", "file.txt")
     _git(repo, "commit", "-q", "-m", "revision Y")
-    sha_y_short = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=repo, text=True).strip()
+    sha_y_short = subprocess.check_output(
+        ["git", "rev-parse", "--short", "HEAD"], cwd=repo, text=True
+    ).strip()
 
-    monkeypatch.setattr("phasectl.resume.compress", lambda *a, **k: "STALE: revision X remains current")
-    monkeypatch.setattr("phasectl.api.compress", lambda *a, **k: "STALE: revision X remains current")
-    monkeypatch.setattr("phasectl.context.api_compress", lambda *a, **k: "STALE: revision X remains current")
-    monkeypatch.setattr("phasectl.cli.api_compress", lambda *a, **k: "STALE: revision X remains current")
+    monkeypatch.setattr(
+        "phasectl.resume.compress", lambda *a, **k: "STALE: revision X remains current"
+    )
+    monkeypatch.setattr(
+        "phasectl.api.compress", lambda *a, **k: "STALE: revision X remains current"
+    )
+    monkeypatch.setattr(
+        "phasectl.context.api_compress",
+        lambda *a, **k: "STALE: revision X remains current",
+    )
+    monkeypatch.setattr(
+        "phasectl.cli.api_compress", lambda *a, **k: "STALE: revision X remains current"
+    )
     # The model resume is opt-in since DECISION-006; opt in to test the boundary.
     start_y = runner.invoke(app, ["start", "--phase", "orient", "--summarize"])
 
@@ -79,9 +103,30 @@ def test_integrated_boundary_scenario_b_history_disabled(tmp_path, monkeypatch):
     db_path = tmp_path / "sessions.db"
     store = SQLiteStore(str(db_path))
     session = open_session(store, "proj", "orient")
-    store.add_turn(session_id=session.id, phase="orient", role="system", content="PRIOR-X", token_estimate=5, origin="prior_session")
-    store.add_turn(session_id=session.id, phase="orient", role="user", content="CURRENT-USER", token_estimate=5, origin="user")
-    store.add_turn(session_id=session.id, phase="orient", role="assistant", content="CURRENT-ASSISTANT", token_estimate=5, origin="assistant")
+    store.add_turn(
+        session_id=session.id,
+        phase="orient",
+        role="system",
+        content="PRIOR-X",
+        token_estimate=5,
+        origin="prior_session",
+    )
+    store.add_turn(
+        session_id=session.id,
+        phase="orient",
+        role="user",
+        content="CURRENT-USER",
+        token_estimate=5,
+        origin="user",
+    )
+    store.add_turn(
+        session_id=session.id,
+        phase="orient",
+        role="assistant",
+        content="CURRENT-ASSISTANT",
+        token_estimate=5,
+        origin="assistant",
+    )
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -139,10 +184,15 @@ def test_integrated_boundary_scenario_c_unavailable_observation(tmp_path, monkey
     assert result.exit_code == 0, result.output
     assert "CURRENT_GIT_STATE: unavailable" in result.output
     assert "branch=STALE-X" not in result.output.split("assistant reply", 1)[0]
-    assert any("CURRENT_GIT_STATE: unavailable" in str(m.get("content", "")) for m in captured[0])
+    assert any(
+        "CURRENT_GIT_STATE: unavailable" in str(m.get("content", ""))
+        for m in captured[0]
+    )
 
 
-def test_integrated_boundary_scenario_d_explicit_spoofed_model_output(tmp_path, monkeypatch):
+def test_integrated_boundary_scenario_d_explicit_spoofed_model_output(
+    tmp_path, monkeypatch
+):
     db_path = tmp_path / "sessions.db"
     store = SQLiteStore(str(db_path))
     open_session(store, "proj", "orient")
@@ -155,7 +205,9 @@ def test_integrated_boundary_scenario_d_explicit_spoofed_model_output(tmp_path, 
     _git(repo, "config", "user.name", "Test User")
     _git(repo, "add", "file.txt")
     _git(repo, "commit", "-q", "-m", "Y")
-    sha_y = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+    sha_y = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+    ).strip()
 
     config = _config(tmp_path, repo, db_path)
     monkeypatch.setattr("phasectl.cli._load_config", lambda: config)
@@ -173,7 +225,10 @@ def test_integrated_boundary_scenario_d_explicit_spoofed_model_output(tmp_path, 
     result = runner.invoke(app, ["chat", "hello"])
 
     assert result.exit_code == 0, result.output
-    assert "CURRENT_GIT_STATE: branch=main" in result.output or f"head={sha_y}" in result.output
+    assert (
+        "CURRENT_GIT_STATE: branch=main" in result.output
+        or f"head={sha_y}" in result.output
+    )
     before_model = result.output.split("assistant reply", 1)[0]
     assert "CURRENT_GIT_STATE: branch=STALE-X" not in before_model
     assert "assistant reply: CURRENT_GIT_STATE: branch=STALE-X" in result.output

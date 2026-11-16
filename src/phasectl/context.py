@@ -16,16 +16,15 @@ def compress_tail(session_id: str, store, app_config: dict) -> str:
     # SPEC-003 INV-003-03/04: only conversation turns are ever compressed;
     # system turns (CLI-owned or supplied verbatim) are never rewritten.
     conversation = [
-        t for t in store.get_uncompressed_turns(session_id)
+        t
+        for t in store.get_uncompressed_turns(session_id)
         if t["phase"] != "_compression" and is_conversation_turn(t)
     ]
     if len(conversation) <= 2:
         return ""
 
     compressable = conversation[:-2]
-    turn_texts = [
-        f"[{t['phase']}][{t['role']}]: {t['content']}" for t in compressable
-    ]
+    turn_texts = [f"[{t['phase']}][{t['role']}]: {t['content']}" for t in compressable]
     turns_text = "\n\n".join(turn_texts)
 
     summary = api_compress(turns_text, app_config)
@@ -45,7 +44,9 @@ def compress_tail(session_id: str, store, app_config: dict) -> str:
     return summary
 
 
-def build_injection_block(prior_session: dict | None, prior_turns: list[dict] | None) -> str:
+def build_injection_block(
+    prior_session: dict | None, prior_turns: list[dict] | None
+) -> str:
     parts = []
     if prior_session:
         summary = prior_session.get("final_summary")

@@ -135,6 +135,7 @@ def _version_callback(value: bool) -> None:
     if not value:
         return
     from . import __version__
+
     print(f"phasectl {__version__}")
     raise typer.Exit(0)
 
@@ -142,20 +143,29 @@ def _version_callback(value: bool) -> None:
 @app.callback()
 def main(
     model: str = typer.Option(
-        None, "--model", "-m",
+        None,
+        "--model",
+        "-m",
         help="Override the chat model for this invocation. Wins over config.toml.",
     ),
     backend: str = typer.Option(
-        None, "--backend", "-b",
+        None,
+        "--backend",
+        "-b",
         help="LLM backend: anthropic, openai, ollama, openrouter, custom. Wins over config.toml.",
     ),
     api_base: str = typer.Option(
-        None, "--api-base",
+        None,
+        "--api-base",
         help="Override the API base URL for this invocation. Wins over config.toml.",
     ),
     version: bool = typer.Option(
-        None, "--version", "-v", "-V",
-        callback=_version_callback, is_eager=True,
+        None,
+        "--version",
+        "-v",
+        "-V",
+        callback=_version_callback,
+        is_eager=True,
         help="Show the phasectl version and exit.",
     ),
 ):
@@ -178,7 +188,7 @@ def _die_on_auth_error(exc: AuthError) -> None:
     raise typer.Exit(exc.exit_code)
 
 
-_DEFAULT_CONFIG_TEMPLATE = '''\
+_DEFAULT_CONFIG_TEMPLATE = """\
 [provider]
 # backend: anthropic | openai | ollama | openrouter | custom
 # Ollama is keyless (runs locally); the others require an API key via
@@ -223,7 +233,7 @@ indexer_command = "codegraph"
 # Per-project index paths are written here by `phasectl index`:
 # [projects.myproject]
 # index_path = "/abs/path/to/myproject"
-'''
+"""
 
 
 _KEYLESS_BACKENDS = {"ollama"}
@@ -241,7 +251,10 @@ def _git_toplevel(path: str) -> str | None:
     try:
         r = subprocess.run(
             ["git", "-C", path, "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, check=False, timeout=5,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
         )
         if r.returncode == 0:
             top = r.stdout.strip()
@@ -336,9 +349,7 @@ def _load_config() -> dict:
         # Wipe them so provider defaults, or the CLI --model, kick in.
         stored_backend = (provider.get("backend") or "").strip()
         new_backend = str(_CLI_OVERRIDES.get("backend", stored_backend)).strip()
-        backend_changed = (
-            "backend" in _CLI_OVERRIDES and new_backend != stored_backend
-        )
+        backend_changed = "backend" in _CLI_OVERRIDES and new_backend != stored_backend
         if backend_changed:
             provider["model"] = ""
             provider["compression_model"] = ""
@@ -381,7 +392,9 @@ def _warn(msg: str) -> None:
     print(msg, file=sys.stderr)
 
 
-def _store_system_turn(store, session_id: str, phase: str, content: str, origin: str) -> None:
+def _store_system_turn(
+    store, session_id: str, phase: str, content: str, origin: str
+) -> None:
     store.add_turn(
         session_id=session_id,
         phase=phase,
@@ -394,17 +407,37 @@ def _store_system_turn(store, session_id: str, phase: str, content: str, origin:
 
 @app.command()
 def start(
-    project: str = typer.Option(None, "--project", "-p", help="Project name; scopes sessions, index path, and graph. Defaults to defaults.project from config."),
-    phase: str = typer.Option("orient", "--phase", help="Phase to open in (orient|ideate|design|impl|validate|snapshot; user overrides in ~/.config/phasectl/phases also accepted)."),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress the diagnostic lines on stderr; the session id and any resume block still print on stdout."),
+    project: str = typer.Option(
+        None,
+        "--project",
+        "-p",
+        help="Project name; scopes sessions, index path, and graph. Defaults to defaults.project from config.",
+    ),
+    phase: str = typer.Option(
+        "orient",
+        "--phase",
+        help="Phase to open in (orient|ideate|design|impl|validate|snapshot; user overrides in ~/.config/phasectl/phases also accepted).",
+    ),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        "-q",
+        help="Suppress the diagnostic lines on stderr; the session id and any resume block still print on stdout.",
+    ),
     no_fuse: bool = typer.Option(
-        False, "--no-fuse", help="Skip the orient-phase fusion of git state + the last external coding-agent transcript. The last phasectl session summary is still injected.",
+        False,
+        "--no-fuse",
+        help="Skip the orient-phase fusion of git state + the last external coding-agent transcript. The last phasectl session summary is still injected.",
     ),
     seed: list[str] = typer.Option(
-        None, "--seed", help="Path to a .md/.txt/.json file injected verbatim as system context (first 200KB). Repeat for multiple files.",
+        None,
+        "--seed",
+        help="Path to a .md/.txt/.json file injected verbatim as system context (first 200KB). Repeat for multiple files.",
     ),
     summarize: bool = typer.Option(
-        False, "--summarize", help="Also ask the model for an orient resume synthesis and seed gists, stored next to the verbatim context. May cause signal loss due to compression.",
+        False,
+        "--summarize",
+        help="Also ask the model for an orient resume synthesis and seed gists, stored next to the verbatim context. May cause signal loss due to compression.",
     ),
 ):
     """Open a new session for a project in the chosen phase.
@@ -440,8 +473,7 @@ def start(
         progress.done()
         available = list_phases()
         print(
-            f"Phase '{phase}' not found. "
-            f"Available phases: {', '.join(available)}",
+            f"Phase '{phase}' not found. Available phases: {', '.join(available)}",
             file=sys.stderr,
         )
         raise typer.Exit(1)
@@ -475,7 +507,9 @@ def start(
                     progress.step("reading coding-agent transcript...")
                     agent_context = extract_last_context(agent_path)
             except Exception as e:
-                _diag(f"[orient] coding-agent transcript lookup skipped: {e}", quiet=quiet)
+                _diag(
+                    f"[orient] coding-agent transcript lookup skipped: {e}", quiet=quiet
+                )
         else:
             _diag(
                 f"[orient] no indexed path for '{project}' — git state and agent transcript skipped.",
@@ -504,22 +538,30 @@ def start(
     agent_body = agent_context.strip()
     if agent_path and agent_body:
         _store_system_turn(
-            store, session.id, phase,
+            store,
+            session.id,
+            phase,
             f"AGENT_CONTEXT (external, verbatim excerpt of {agent_path}: last messages, "
             f"each cut to 1200 chars, at most 4000 chars; not verified):\n{agent_body}",
             "agent_context",
         )
 
     for _path, basename, text, truncated in seed_files:
-        _store_system_turn(store, session.id, phase, seed_turn_text(basename, text, truncated), "seed")
+        _store_system_turn(
+            store, session.id, phase, seed_turn_text(basename, text, truncated), "seed"
+        )
 
     resume_synthesis = ""
     if summarize and fused:
         _warn("warning: resume synthesis may cause signal loss due to compression")
         progress.step(f"synthesizing resume block via {_compression_label(config)}...")
-        session_summary = (prior_session.get("final_summary") or "").strip() if prior_session else ""
+        session_summary = (
+            (prior_session.get("final_summary") or "").strip() if prior_session else ""
+        )
         try:
-            _, resume_synthesis = build_resume_block(git_state, session_summary, agent_context, config)
+            _, resume_synthesis = build_resume_block(
+                git_state, session_summary, agent_context, config
+            )
         except Exception as e:
             _warn(f"resume synthesis failed: {e}")
             resume_synthesis = ""
@@ -529,7 +571,9 @@ def start(
     if summarize and seed_files:
         _warn("warning: seed gist may cause signal loss due to compression")
         for path, basename, text, truncated in seed_files:
-            progress.step(f"summarizing seed {basename} via {_compression_label(config)}...")
+            progress.step(
+                f"summarizing seed {basename} via {_compression_label(config)}..."
+            )
             try:
                 gist = summarize_seed(path, text, truncated, config)
             except Exception as e:
@@ -541,7 +585,8 @@ def start(
     progress.done()
     if fused and (git_state or get_index_path(project, config)):
         history = [
-            t["content"] for t in store.get_turns(session.id)
+            t["content"]
+            for t in store.get_turns(session.id)
             if t.get("origin") in HISTORICAL_ORIGINS
         ]
         print(format_live_git_block(git_state, history))
@@ -581,17 +626,29 @@ def _is_prior_session_memory_turn(turn):
 
 @app.command()
 def chat(
-    message: str = typer.Argument(..., help="Message to send. Wrap in quotes for anything longer than one word."),
+    message: str = typer.Argument(
+        ..., help="Message to send. Wrap in quotes for anything longer than one word."
+    ),
     model: str = typer.Option(
-        None, "--model", "-m",
+        None,
+        "--model",
+        "-m",
         help="Override the chat model for this single message. Wins over config.toml and the global --model.",
     ),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress the 'Compressing tail turns…' diagnostic on stderr."),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        "-q",
+        help="Suppress the 'Compressing tail turns…' diagnostic on stderr.",
+    ),
     prior_session_memory: bool = typer.Option(
-        False, "--prior-session-memory/--no-prior-session-memory",
+        False,
+        "--prior-session-memory/--no-prior-session-memory",
         help="Include the most recent closed session's summary and tail turns as historical (non-authoritative) context.",
-    ),    compress: bool = typer.Option(
-        False, "--compress",
+    ),
+    compress: bool = typer.Option(
+        False,
+        "--compress",
         help="When the session is over the phase token budget, let the model summarize older conversation turns. May cause signal loss due to compression.",
     ),
 ):
@@ -663,9 +720,7 @@ def chat(
         )
     if over_budget and compress:
         _warn("warning: tail compression may cause signal loss due to compression")
-        progress.step(
-            f"compressing tail turns via {_compression_label(config)}..."
-        )
+        progress.step(f"compressing tail turns via {_compression_label(config)}...")
         try:
             compress_tail(session_data["id"], store, config)
         except AuthError as e:
@@ -719,7 +774,8 @@ def chat(
             pass
 
     history_sent = [
-        turn["content"] for turn in turns
+        turn["content"]
+        for turn in turns
         if not turn["compressed"]
         and turn.get("origin") in HISTORICAL_ORIGINS
         and (prior_session_memory or not _is_prior_session_memory_turn(turn))
@@ -793,8 +849,14 @@ def chat(
 
 @app.command()
 def switch(
-    phase: str = typer.Option(..., "--phase", help="Phase to switch to (orient|ideate|design|impl|validate|snapshot, or any user-defined phase in ~/.config/phasectl/phases)."),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress the confirmation on stderr."),
+    phase: str = typer.Option(
+        ...,
+        "--phase",
+        help="Phase to switch to (orient|ideate|design|impl|validate|snapshot, or any user-defined phase in ~/.config/phasectl/phases).",
+    ),
+    quiet: bool = typer.Option(
+        False, "--quiet", "-q", help="Suppress the confirmation on stderr."
+    ),
 ):
     """Switch the active session to a different phase.
 
@@ -817,8 +879,7 @@ def switch(
     except FileNotFoundError:
         available = list_phases()
         print(
-            f"Phase '{phase}' not found. "
-            f"Available phases: {', '.join(available)}",
+            f"Phase '{phase}' not found. Available phases: {', '.join(available)}",
             file=sys.stderr,
         )
         raise typer.Exit(1)
@@ -834,8 +895,17 @@ def switch(
 
 @app.command()
 def close(
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Reserved; snapshot output is a single line and is always printed."),
-    summarize: bool = typer.Option(False, "--summarize", help="Also append a model-written summary after the deterministic snapshot. May cause signal loss due to compression."),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        "-q",
+        help="Reserved; snapshot output is a single line and is always printed.",
+    ),
+    summarize: bool = typer.Option(
+        False,
+        "--summarize",
+        help="Also append a model-written summary after the deterministic snapshot. May cause signal loss due to compression.",
+    ),
 ):
     """Close the active session and store a deterministic snapshot.
 
@@ -870,9 +940,10 @@ def close(
 
     if summarize:
         _warn("warning: snapshot summary may cause signal loss due to compression")
-        turns_text = "\n\n".join(
-            f"[{t['phase']}][{t['role']}]: {t['content']}" for t in turns
-        ) or "No turns in this session."
+        turns_text = (
+            "\n\n".join(f"[{t['phase']}][{t['role']}]: {t['content']}" for t in turns)
+            or "No turns in this session."
+        )
         progress.step(
             f"summarizing {len(turns)} turns via {_compression_label(config)}..."
         )
@@ -898,7 +969,9 @@ def close(
     progress.step(
         f"updating graph ({len(rfcs)} RFCs, {len(decisions)} DECISIONs linked)..."
     )
-    persist_session_graph(session_data["id"], project, snapshot, session_data["created_at"], config)
+    persist_session_graph(
+        session_data["id"], project, snapshot, session_data["created_at"], config
+    )
 
     progress.done()
     print(f"{session_data['id'][:8]} {len(turns)}→1 {total_tokens}t")
@@ -906,8 +979,14 @@ def close(
 
 @app.command()
 def status(
-    json_flag: bool = typer.Option(False, "--json", help="Emit a JSON object with session_id, project, phase, tokens, turns (and last_session when no session is active)."),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Reserved; status output is already terse."),
+    json_flag: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit a JSON object with session_id, project, phase, tokens, turns (and last_session when no session is active).",
+    ),
+    quiet: bool = typer.Option(
+        False, "--quiet", "-q", help="Reserved; status output is already terse."
+    ),
 ):
     """Show whether a session is active for the default project.
 
@@ -925,13 +1004,17 @@ def status(
         turns = store.get_turns(session_data["id"])
         total_tokens = sum(t["token_estimate"] for t in turns)
         if json_flag:
-            print(json.dumps({
-                "session_id": session_data["id"][:8],
-                "project": session_data["project"],
-                "phase": current_phase,
-                "tokens": total_tokens,
-                "turns": len(turns),
-            }))
+            print(
+                json.dumps(
+                    {
+                        "session_id": session_data["id"][:8],
+                        "project": session_data["project"],
+                        "phase": current_phase,
+                        "tokens": total_tokens,
+                        "turns": len(turns),
+                    }
+                )
+            )
         else:
             print(
                 f"Project: {session_data['project']}\n"
@@ -945,14 +1028,18 @@ def status(
         if last:
             close_date = last.get("closed_at", "unknown")
             if json_flag:
-                print(json.dumps({
-                    "session_id": last["id"][:8],
-                    "project": project,
-                    "phase": None,
-                    "tokens": last.get("total_tokens", 0),
-                    "turns": 0,
-                    "last_session": close_date[:10],
-                }))
+                print(
+                    json.dumps(
+                        {
+                            "session_id": last["id"][:8],
+                            "project": project,
+                            "phase": None,
+                            "tokens": last.get("total_tokens", 0),
+                            "turns": 0,
+                            "last_session": close_date[:10],
+                        }
+                    )
+                )
             else:
                 print(
                     f"No active session.\n"
@@ -960,14 +1047,18 @@ def status(
                 )
         else:
             if json_flag:
-                print(json.dumps({
-                    "session_id": None,
-                    "project": project,
-                    "phase": None,
-                    "tokens": 0,
-                    "turns": 0,
-                    "last_session": None,
-                }))
+                print(
+                    json.dumps(
+                        {
+                            "session_id": None,
+                            "project": project,
+                            "phase": None,
+                            "tokens": 0,
+                            "turns": 0,
+                            "last_session": None,
+                        }
+                    )
+                )
             else:
                 print("No active session.")
 
@@ -991,12 +1082,16 @@ def _run_index(binary: str, path: str) -> subprocess.CompletedProcess:
     """
     proc = subprocess.run(
         [binary, "index", path],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
     if proc.returncode != 0 and "not initialized" in (proc.stderr or "").lower():
         proc = subprocess.run(
             [binary, "init", path],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
     return proc
 
@@ -1011,7 +1106,9 @@ def _summarize_index(binary: str, path: str, stdout: str) -> str:
     try:
         status_proc = subprocess.run(
             [binary, "status", path, "--json"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         if status_proc.returncode == 0:
             data = json.loads(status_proc.stdout)
@@ -1063,13 +1160,25 @@ def _parse_symbol_count(stdout: str) -> str:
 
 @app.command()
 def index(
-    project: str = typer.Option(None, "--project", "-p", help="Project name to store the index_path under, in config.toml. Defaults to defaults.project from config."),
-    path: str = typer.Option(None, "--path", help="Absolute or relative path to the project root. If omitted, the previously stored path for --project is re-indexed."),
+    project: str = typer.Option(
+        None,
+        "--project",
+        "-p",
+        help="Project name to store the index_path under, in config.toml. Defaults to defaults.project from config.",
+    ),
+    path: str = typer.Option(
+        None,
+        "--path",
+        help="Absolute or relative path to the project root. If omitted, the previously stored path for --project is re-indexed.",
+    ),
     register_only: bool = typer.Option(
-        False, "--register-only",
+        False,
+        "--register-only",
         help="Store the path in config without invoking any indexer. For indexers that handle indexing externally.",
     ),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress the 'Indexing …' diagnostic on stderr."),
+    quiet: bool = typer.Option(
+        False, "--quiet", "-q", help="Suppress the 'Indexing …' diagnostic on stderr."
+    ),
 ):
     """Index a project so 'phasectl query' and the impl/validate tools can find its symbols.
 
@@ -1163,9 +1272,20 @@ def index(
 @app.command()
 def query(
     symbol: str = typer.Argument(..., help="Symbol name or pattern to search for."),
-    project: str = typer.Option(None, "--project", "-p", help="Project name whose stored index_path holds the index to search. Defaults to defaults.project from config."),
-    json_flag: bool = typer.Option(False, "--json", help="Print the indexer's raw JSON result instead of one match per line."),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Reserved; query output goes to stdout unchanged."),
+    project: str = typer.Option(
+        None,
+        "--project",
+        "-p",
+        help="Project name whose stored index_path holds the index to search. Defaults to defaults.project from config.",
+    ),
+    json_flag: bool = typer.Option(
+        False,
+        "--json",
+        help="Print the indexer's raw JSON result instead of one match per line.",
+    ),
+    quiet: bool = typer.Option(
+        False, "--quiet", "-q", help="Reserved; query output goes to stdout unchanged."
+    ),
 ):
     """Search the indexed symbols of a project via the configured indexer binary.
 
@@ -1178,7 +1298,10 @@ def query(
     project = _resolve_project(project, config)
     index_path = get_index_path(project, config)
     if not index_path:
-        print(f"no index for {project}. run: phasectl index --project {project} --path <path>", file=sys.stderr)
+        print(
+            f"no index for {project}. run: phasectl index --project {project} --path <path>",
+            file=sys.stderr,
+        )
         raise typer.Exit(4)
 
     tool_executor = ToolExecutor(project=project)
@@ -1201,8 +1324,15 @@ def query(
 
 @app.command()
 def graph(
-    project: str = typer.Option(None, "--project", "-p", help="Project name to filter the graph on. Defaults to defaults.project from config."),
-    json_flag: bool = typer.Option(False, "--json", help="Emit the graph as a JSON {sessions: [...]} document."),
+    project: str = typer.Option(
+        None,
+        "--project",
+        "-p",
+        help="Project name to filter the graph on. Defaults to defaults.project from config.",
+    ),
+    json_flag: bool = typer.Option(
+        False, "--json", help="Emit the graph as a JSON {sessions: [...]} document."
+    ),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Reserved."),
 ):
     """Show closed sessions with their linked RFCs and DECISIONs.
@@ -1224,7 +1354,9 @@ def graph(
         if json_flag:
             print(json.dumps({"sessions": []}))
         else:
-            print("(no sessions closed yet — graph will populate on first `phasectl close`)")
+            print(
+                "(no sessions closed yet — graph will populate on first `phasectl close`)"
+            )
         return
 
     try:
@@ -1252,12 +1384,35 @@ def graph(
 
 @app.command()
 def loose(
-    project: str = typer.Option(None, "--project", "-p", help="Project name; uses its stored index_path as the repo. Falls back to the default_project if omitted."),
-    path: str = typer.Option(None, "--path", help="Path to any git repository. Bypasses --project and works on repos phasectl has never indexed."),
-    base: str = typer.Option("main", "--base", help="Base branch to compare against. Falls back to 'master' or origin/HEAD if the requested branch doesn't exist."),
-    json_flag: bool = typer.Option(False, "--json", help="Emit the raw collected data as JSON (repo, current_branch, base, uncommitted, unmerged, stashes, unpushed, worktrees)."),
-    synthesize: bool = typer.Option(False, "--synthesize", help="Call the compression model to add one 'Most stale: …' top line naming the coldest loose thread. Requires the API key."),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Drop the 'In flight across …' header line."),
+    project: str = typer.Option(
+        None,
+        "--project",
+        "-p",
+        help="Project name; uses its stored index_path as the repo. Falls back to the default_project if omitted.",
+    ),
+    path: str = typer.Option(
+        None,
+        "--path",
+        help="Path to any git repository. Bypasses --project and works on repos phasectl has never indexed.",
+    ),
+    base: str = typer.Option(
+        "main",
+        "--base",
+        help="Base branch to compare against. Falls back to 'master' or origin/HEAD if the requested branch doesn't exist.",
+    ),
+    json_flag: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the raw collected data as JSON (repo, current_branch, base, uncommitted, unmerged, stashes, unpushed, worktrees).",
+    ),
+    synthesize: bool = typer.Option(
+        False,
+        "--synthesize",
+        help="Call the compression model to add one 'Most stale: …' top line naming the coldest loose thread. Requires the API key.",
+    ),
+    quiet: bool = typer.Option(
+        False, "--quiet", "-q", help="Drop the 'In flight across …' header line."
+    ),
 ):
     """List every loose thread in a git repo: uncommitted files, unmerged branches, stashes, unpushed commits, extra worktrees.
 
@@ -1301,7 +1456,11 @@ def loose(
     elif path:
         label = os.path.basename(os.path.abspath(repo).rstrip("/")) or repo
     else:
-        label = active_project or os.path.basename(os.path.abspath(repo).rstrip("/")) or repo
+        label = (
+            active_project
+            or os.path.basename(os.path.abspath(repo).rstrip("/"))
+            or repo
+        )
 
     top_line = ""
     if synthesize:
@@ -1324,8 +1483,17 @@ def loose(
 
 @app.command()
 def check(
-    project: str = typer.Option(None, "--project", "-p", help="Project name for the index/git checks. Defaults to defaults.project from config."),
-    json_flag: bool = typer.Option(False, "--json", help="Emit a JSON {ok, project, checks:[{name, ok, message}]} document."),
+    project: str = typer.Option(
+        None,
+        "--project",
+        "-p",
+        help="Project name for the index/git checks. Defaults to defaults.project from config.",
+    ),
+    json_flag: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit a JSON {ok, project, checks:[{name, ok, message}]} document.",
+    ),
 ):
     """Smoke-test every subsystem. No LLM calls, no API key required.
 
@@ -1416,11 +1584,16 @@ def check(
     idx_path = None
     try:
         if not project:
-            _unconfigured("index", "no project (run from a project dir or pass --project)")
+            _unconfigured(
+                "index", "no project (run from a project dir or pass --project)"
+            )
         else:
             idx = get_index_path(project, config)
             if idx is None:
-                _unconfigured("index", f"'{project}' has no stored path (run: phasectl index --project {project} --path <dir>)")
+                _unconfigured(
+                    "index",
+                    f"'{project}' has no stored path (run: phasectl index --project {project} --path <dir>)",
+                )
             elif not idx.exists():
                 _fail("index", f"'{project}' path missing: {idx}")
             else:
@@ -1433,19 +1606,24 @@ def check(
     # indexer — the configured indexer binary is found on PATH
     try:
         import shutil
+
         raw_cmd = (config.get("tools") or {}).get("indexer_command", "") or "codegraph"
         cmd = shlex.split(raw_cmd)
         binary_path = shutil.which(cmd[0]) if cmd else None
         if binary_path:
             _ok("indexer", f"{cmd[0]} found on PATH ({binary_path})")
         else:
-            _unconfigured("indexer", f"{cmd[0]} not found on PATH (install it or set [tools].indexer_command)")
+            _unconfigured(
+                "indexer",
+                f"{cmd[0]} not found on PATH (install it or set [tools].indexer_command)",
+            )
     except Exception as e:
         _fail("indexer", f"error: {e}")
 
     # git — prefer the indexed repo, fall back to cwd
     try:
         from .loose import get_current_branch, get_uncommitted, is_git_repo
+
         repo = idx_path or os.getcwd()
         if is_git_repo(repo):
             branch = get_current_branch(repo) or "detached"
@@ -1462,14 +1640,23 @@ def check(
     _MARKS = {"ok": "✓", "unconfigured": "—", "fail": "✗"}
 
     if json_flag:
-        print(json.dumps({
-            "ok": all_ok,
-            "project": project or None,
-            "checks": [
-                {"name": n, "ok": status == "ok", "status": status, "message": m}
-                for n, status, m in results
-            ],
-        }))
+        print(
+            json.dumps(
+                {
+                    "ok": all_ok,
+                    "project": project or None,
+                    "checks": [
+                        {
+                            "name": n,
+                            "ok": status == "ok",
+                            "status": status,
+                            "message": m,
+                        }
+                        for n, status, m in results
+                    ],
+                }
+            )
+        )
     else:
         for name, status, msg in results:
             print(f"{(name + ':'):<10}  {_MARKS[status]} {msg}")

@@ -5,15 +5,27 @@ from typing import Optional, Protocol
 
 
 class AbstractStore(Protocol):
-    def create_session(self, id: str, project: str, phase: str, created_at: str) -> None: ...
+    def create_session(
+        self, id: str, project: str, phase: str, created_at: str
+    ) -> None: ...
 
     def get_session(self, id: str) -> Optional[dict]: ...
 
     def update_session(self, id: str, **kwargs) -> None: ...
 
-    def close_session(self, id: str, phase: str, summary: str, total_tokens: int) -> None: ...
+    def close_session(
+        self, id: str, phase: str, summary: str, total_tokens: int
+    ) -> None: ...
 
-    def add_turn(self, session_id: str, phase: str, role: str, content: str, token_estimate: int, origin: Optional[str] = None) -> int: ...
+    def add_turn(
+        self,
+        session_id: str,
+        phase: str,
+        role: str,
+        content: str,
+        token_estimate: int,
+        origin: Optional[str] = None,
+    ) -> int: ...
 
     def get_turns(self, session_id: str) -> list[dict]: ...
 
@@ -72,7 +84,9 @@ class SQLiteStore:
             self.conn.execute("ALTER TABLE turns ADD COLUMN origin TEXT")
             self.conn.commit()
 
-    def create_session(self, id: str, project: str, phase: str, created_at: str) -> None:
+    def create_session(
+        self, id: str, project: str, phase: str, created_at: str
+    ) -> None:
         self.conn.execute(
             "INSERT INTO sessions (id, project, created_at, opening_phase) VALUES (?, ?, ?, ?)",
             (id, project, created_at, phase),
@@ -92,7 +106,9 @@ class SQLiteStore:
         self.conn.execute(f"UPDATE sessions SET {sets} WHERE id = ?", values)
         self.conn.commit()
 
-    def close_session(self, id: str, phase: str, summary: str, total_tokens: int) -> None:
+    def close_session(
+        self, id: str, phase: str, summary: str, total_tokens: int
+    ) -> None:
         now = datetime.now().isoformat()
         self.conn.execute(
             "UPDATE sessions SET closed_at = ?, closing_phase = ?, final_summary = ?, total_tokens = ? WHERE id = ?",
@@ -100,7 +116,15 @@ class SQLiteStore:
         )
         self.conn.commit()
 
-    def add_turn(self, session_id: str, phase: str, role: str, content: str, token_estimate: int, origin: Optional[str] = None) -> int:
+    def add_turn(
+        self,
+        session_id: str,
+        phase: str,
+        role: str,
+        content: str,
+        token_estimate: int,
+        origin: Optional[str] = None,
+    ) -> int:
         now = datetime.now().isoformat()
         cursor = self.conn.execute(
             "INSERT INTO turns (session_id, phase, role, content, token_estimate, timestamp, origin) VALUES (?, ?, ?, ?, ?, ?, ?)",

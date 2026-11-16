@@ -54,7 +54,10 @@ def test_block_deduplicates_lines_and_keeps_first_occurrence_order():
     block = build_prior_decisions_block({"id": "s1"}, [_user(summary), _user(summary)])
 
     lines = [line for line in block.splitlines() if line.startswith("- ")]
-    assert lines == ["- [user] DECISION-002 and DECISION-001 together.", "- [user] Later: DECISION-001 again."]
+    assert lines == [
+        "- [user] DECISION-002 and DECISION-001 together.",
+        "- [user] Later: DECISION-001 again.",
+    ]
 
 
 def test_block_is_explicit_when_nothing_to_carry():
@@ -78,7 +81,9 @@ def _config(tmp_path, db_path):
 
 def _close_prior(store, content):
     prior = open_session(store, "proj", "design")
-    store.add_turn(prior.id, "design", "user", content, estimate_tokens(content), origin="user")
+    store.add_turn(
+        prior.id, "design", "user", content, estimate_tokens(content), origin="user"
+    )
     store.close_session(prior.id, "design", "model prose: PRIOR-SESSION-PROSE", 10)
     return prior
 
