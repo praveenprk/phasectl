@@ -18,7 +18,9 @@ from phasectl.session import open_session
 from phasectl.store import SQLiteStore
 
 
-def test_close_includes_compressed_original_decision(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_close_includes_compressed_original_decision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     db_path = tmp_path / "sessions.db"
     store = SQLiteStore(str(db_path))
     session = open_session(store, "testproj", "design")
@@ -28,7 +30,9 @@ def test_close_includes_compressed_original_decision(tmp_path: Path, monkeypatch
         phase="design",
         role="user",
         content="Design decision: DECISION-TEST-001 use append-only turn storage.",
-        token_estimate=estimate_tokens("Design decision: DECISION-TEST-001 use append-only turn storage."),
+        token_estimate=estimate_tokens(
+            "Design decision: DECISION-TEST-001 use append-only turn storage."
+        ),
     )
 
     # Simulate compress_tail(): original turn is marked compressed, and a
@@ -39,7 +43,9 @@ def test_close_includes_compressed_original_decision(tmp_path: Path, monkeypatch
         phase="_compression",
         role="system",
         content="[COMPRESSED SUMMARY: prior design work; details omitted]",
-        token_estimate=estimate_tokens("[COMPRESSED SUMMARY: prior design work; details omitted]"),
+        token_estimate=estimate_tokens(
+            "[COMPRESSED SUMMARY: prior design work; details omitted]"
+        ),
     )
     store.add_turn(
         session_id=session.id,
@@ -51,18 +57,27 @@ def test_close_includes_compressed_original_decision(tmp_path: Path, monkeypatch
 
     captured: dict[str, str] = {}
 
-    def fake_compress(turns_text: str, config: dict, system_prompt: str | None = None) -> str:
+    def fake_compress(
+        turns_text: str, config: dict, system_prompt: str | None = None
+    ) -> str:
         captured["turns_text"] = turns_text
         return "SNAPSHOT WITHOUT IDENTIFIER"
 
-    monkeypatch.setattr("phasectl.cli._load_config", lambda: {
-        "storage": {"db_path": str(db_path)},
-        "defaults": {"project": "testproj"},
-    })
+    monkeypatch.setattr(
+        "phasectl.cli._load_config",
+        lambda: {
+            "storage": {"db_path": str(db_path)},
+            "defaults": {"project": "testproj"},
+        },
+    )
     monkeypatch.setattr("phasectl.cli._get_store", lambda config: store)
-    monkeypatch.setattr("phasectl.cli._resolve_project", lambda project, config: "testproj")
+    monkeypatch.setattr(
+        "phasectl.cli._resolve_project", lambda project, config: "testproj"
+    )
     monkeypatch.setattr("phasectl.cli.api_compress", fake_compress)
-    monkeypatch.setattr("phasectl.cli.persist_session_graph", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "phasectl.cli.persist_session_graph", lambda *args, **kwargs: None
+    )
 
     close(quiet=True, summarize=True)
 
@@ -109,24 +124,32 @@ def test_close_excludes_synthetic_compression_summaries(
 
     captured: dict[str, str] = {}
 
-    def fake_compress(turns_text: str, config: dict, system_prompt: str | None = None) -> str:
+    def fake_compress(
+        turns_text: str, config: dict, system_prompt: str | None = None
+    ) -> str:
         captured["turns_text"] = turns_text
         return "SNAPSHOT"
 
-    monkeypatch.setattr("phasectl.cli._load_config", lambda: {
-        "storage": {"db_path": str(db_path)},
-        "defaults": {"project": "testproj"},
-    })
+    monkeypatch.setattr(
+        "phasectl.cli._load_config",
+        lambda: {
+            "storage": {"db_path": str(db_path)},
+            "defaults": {"project": "testproj"},
+        },
+    )
     monkeypatch.setattr("phasectl.cli._get_store", lambda config: store)
-    monkeypatch.setattr("phasectl.cli._resolve_project", lambda project, config: "testproj")
+    monkeypatch.setattr(
+        "phasectl.cli._resolve_project", lambda project, config: "testproj"
+    )
     monkeypatch.setattr("phasectl.cli.api_compress", fake_compress)
-    monkeypatch.setattr("phasectl.cli.persist_session_graph", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "phasectl.cli.persist_session_graph", lambda *args, **kwargs: None
+    )
 
     close(quiet=True, summarize=True)
 
     assert captured["turns_text"] == (
-        f"[design][user]: {original_content}\n\n"
-        f"[impl][assistant]: {later_content}"
+        f"[design][user]: {original_content}\n\n[impl][assistant]: {later_content}"
     )
     assert store.get_turns(session.id) == rows_before_close
     assert store.get_turns(session.id)[0]["compressed"] == 1
@@ -156,33 +179,47 @@ def test_close_keeps_reference_the_model_dropped(
         phase="_compression",
         role="system",
         content="[COMPRESSED SUMMARY: decision reference omitted]",
-        token_estimate=estimate_tokens("[COMPRESSED SUMMARY: decision reference omitted]"),
+        token_estimate=estimate_tokens(
+            "[COMPRESSED SUMMARY: decision reference omitted]"
+        ),
     )
     rows_before_close = store.get_turns(session.id)
     generated_summary = "SNAPSHOT WITHOUT IDENTIFIER"
     graph_calls: list[str] = []
 
-    monkeypatch.setattr("phasectl.cli._load_config", lambda: {
-        "storage": {"db_path": str(db_path)},
-        "defaults": {"project": "testproj"},
-    })
+    monkeypatch.setattr(
+        "phasectl.cli._load_config",
+        lambda: {
+            "storage": {"db_path": str(db_path)},
+            "defaults": {"project": "testproj"},
+        },
+    )
     monkeypatch.setattr("phasectl.cli._get_store", lambda config: store)
-    monkeypatch.setattr("phasectl.cli._resolve_project", lambda project, config: "testproj")
+    monkeypatch.setattr(
+        "phasectl.cli._resolve_project", lambda project, config: "testproj"
+    )
     monkeypatch.setattr(
         "phasectl.cli.api_compress",
         lambda *args, **kwargs: generated_summary,
     )
     monkeypatch.setattr(
         "phasectl.cli.persist_session_graph",
-        lambda session_id, project, summary, created_at, config: graph_calls.append(summary),
+        lambda session_id, project, summary, created_at, config: graph_calls.append(
+            summary
+        ),
     )
 
     close(quiet=True, summarize=True)
 
     stored_summary = store.get_session(session.id)["final_summary"]
-    deterministic, model_part = stored_summary.split("\n\n[MODEL-DERIVED SUMMARY (non-authoritative)]\n")
+    deterministic, model_part = stored_summary.split(
+        "\n\n[MODEL-DERIVED SUMMARY (non-authoritative)]\n"
+    )
     assert model_part == generated_summary
-    assert "- [user] DECISION-C-903 was proposed and rejected during review." in deterministic
+    assert (
+        "- [user] DECISION-C-903 was proposed and rejected during review."
+        in deterministic
+    )
     assert "REFERENCES: DECISION-C-903\n" in deterministic
     assert graph_calls == [deterministic]
     assert store.get_turns(session.id) == rows_before_close
@@ -215,17 +252,26 @@ def test_close_lists_each_reference_once_whatever_the_model_writes(
 ) -> None:
     db_path = tmp_path / "sessions.db"
     store = SQLiteStore(str(db_path))
-    monkeypatch.setattr("phasectl.cli._load_config", lambda: {
-        "storage": {"db_path": str(db_path)},
-        "defaults": {"project": "testproj"},
-    })
+    monkeypatch.setattr(
+        "phasectl.cli._load_config",
+        lambda: {
+            "storage": {"db_path": str(db_path)},
+            "defaults": {"project": "testproj"},
+        },
+    )
     monkeypatch.setattr("phasectl.cli._get_store", lambda config: store)
-    monkeypatch.setattr("phasectl.cli._resolve_project", lambda project, config: "testproj")
+    monkeypatch.setattr(
+        "phasectl.cli._resolve_project", lambda project, config: "testproj"
+    )
     monkeypatch.setattr(
         "phasectl.cli.api_compress",
-        lambda *args, **kwargs: "Code-only reference: `multiline\nDECISION-C-903\ncode`\nEligible prose: DECISION-019",
+        lambda *args, **kwargs: (
+            "Code-only reference: `multiline\nDECISION-C-903\ncode`\nEligible prose: DECISION-019"
+        ),
     )
-    monkeypatch.setattr("phasectl.cli.persist_session_graph", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "phasectl.cli.persist_session_graph", lambda *args, **kwargs: None
+    )
 
     session = open_session(store, "testproj", "design")
     for content in (
@@ -242,6 +288,10 @@ def test_close_lists_each_reference_once_whatever_the_model_writes(
 
     close(quiet=True, summarize=True)
 
-    deterministic = store.get_session(session.id)["final_summary"].split("\n\n[MODEL-DERIVED")[0]
+    deterministic = store.get_session(session.id)["final_summary"].split(
+        "\n\n[MODEL-DERIVED"
+    )[0]
     assert "REFERENCES: DECISION-C-903, DECISION-A-100, DECISION-019\n" in deterministic
-    assert deterministic.count("- [assistant] Historical occurrence: DECISION-C-903.") == 1
+    assert (
+        deterministic.count("- [assistant] Historical occurrence: DECISION-C-903.") == 1
+    )

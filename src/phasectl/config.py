@@ -4,6 +4,7 @@ from pathlib import Path
 
 try:
     import tomli_w
+
     TOMLI_W_AVAILABLE = True
 except ImportError:
     TOMLI_W_AVAILABLE = False

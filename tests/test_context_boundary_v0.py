@@ -1,4 +1,3 @@
-
 from typer.testing import CliRunner
 
 from phasectl.cli import app
@@ -38,7 +37,9 @@ def _chat_setup(tmp_path, monkeypatch, git_state):
         return git_state
 
     monkeypatch.setattr("phasectl.cli.get_git_state", fake_git_state)
-    monkeypatch.setattr("phasectl.cli.get_index_path", lambda project, config: repo_path)
+    monkeypatch.setattr(
+        "phasectl.cli.get_index_path", lambda project, config: repo_path
+    )
 
     captured = []
 
@@ -61,8 +62,7 @@ def test_chat_refreshes_git_state_at_invocation(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert calls == [repo_path]
     assert any(
-        LIVE_BRANCH in str(message.get("content", ""))
-        for message in captured[0]
+        LIVE_BRANCH in str(message.get("content", "")) for message in captured[0]
     )
 
 
@@ -73,7 +73,9 @@ def test_chat_captures_fresh_git_state_on_each_invocation(tmp_path, monkeypatch)
             {"branch": SECOND_BRANCH, "dirty": True, "dirty_count": 1},
         ]
     )
-    runner, calls, captured, repo_path, store = _chat_setup(tmp_path, monkeypatch, lambda: next(states))
+    runner, calls, captured, repo_path, store = _chat_setup(
+        tmp_path, monkeypatch, lambda: next(states)
+    )
 
     first = runner.invoke(app, ["chat", "first"])
     second = runner.invoke(app, ["chat", "second"])
@@ -106,8 +108,7 @@ def test_chat_reports_unavailable_git_state(tmp_path, monkeypatch):
         for message in captured[0]
     )
     assert any(
-        HIST_BRANCH in str(message.get("content", ""))
-        for message in captured[0]
+        HIST_BRANCH in str(message.get("content", "")) for message in captured[0]
     )
 
 
@@ -139,7 +140,9 @@ def test_prior_session_memory_disabled_retains_current_turns(tmp_path, monkeypat
 
     assert result.exit_code == 0, result.output
     assert any("CURRENT-SESSION-TURN" in str(m.get("content", "")) for m in captured[0])
-    assert not any("PRIOR-SESSION-MEMORY" in str(m.get("content", "")) for m in captured[0])
+    assert not any(
+        "PRIOR-SESSION-MEMORY" in str(m.get("content", "")) for m in captured[0]
+    )
     assert not any("PRIOR-TURN" in str(m.get("content", "")) for m in captured[0])
 
 
@@ -261,12 +264,14 @@ def test_no_prior_session_memory_excludes_injected_prior_memory(tmp_path, monkey
 
     assert result.exit_code == 0, result.output
     assert any("CURRENT-SESSION-TURN" in str(m.get("content", "")) for m in captured[0])
-    assert not any("PRIOR-SESSION-MEMORY" in str(m.get("content", "")) for m in captured[0])
+    assert not any(
+        "PRIOR-SESSION-MEMORY" in str(m.get("content", "")) for m in captured[0]
+    )
     assert not any("PRIOR-TURN" in str(m.get("content", "")) for m in captured[0])
-    assert any(
-        "Prior session summary:" in str(m.get("content", ""))
-        for m in captured[0]
-    ) is False
+    assert (
+        any("Prior session summary:" in str(m.get("content", "")) for m in captured[0])
+        is False
+    )
 
 
 def test_chat_current_git_state_includes_live_head_commit(tmp_path, monkeypatch):
@@ -304,10 +309,15 @@ def test_chat_unavailable_git_state_does_not_substitute_head(tmp_path, monkeypat
 
     assert result.exit_code == 0, result.output
     assert "CURRENT_GIT_STATE: unavailable" in result.output
-    assert f"head={HIST_BRANCH}" not in result.output.split("CURRENT_GIT_STATE: unavailable", 1)[-1]
+    assert (
+        f"head={HIST_BRANCH}"
+        not in result.output.split("CURRENT_GIT_STATE: unavailable", 1)[-1]
+    )
 
 
-def test_chat_branch_present_status_failed_marks_dirty_unavailable(tmp_path, monkeypatch):
+def test_chat_branch_present_status_failed_marks_dirty_unavailable(
+    tmp_path, monkeypatch
+):
     runner, calls, captured, repo_path, store = _chat_setup(
         tmp_path, monkeypatch, {"branch": LIVE_BRANCH}
     )
@@ -336,7 +346,9 @@ def test_chat_branch_present_head_failed_does_not_fabricate_head(tmp_path, monke
 
 def test_git_state_head_lookup_failure_is_explicit(tmp_path, monkeypatch):
     runner, calls, captured, repo_path, store = _chat_setup(
-        tmp_path, monkeypatch, {"branch": LIVE_BRANCH, "dirty": False, "dirty_count": 0, "last_commit": None}
+        tmp_path,
+        monkeypatch,
+        {"branch": LIVE_BRANCH, "dirty": False, "dirty_count": 0, "last_commit": None},
     )
 
     result = runner.invoke(app, ["chat", "hello"])
@@ -346,7 +358,9 @@ def test_git_state_head_lookup_failure_is_explicit(tmp_path, monkeypatch):
     assert "head=unavailable" in result.output
 
 
-def test_start_unavailable_working_tree_status_displays_unavailable(tmp_path, monkeypatch):
+def test_start_unavailable_working_tree_status_displays_unavailable(
+    tmp_path, monkeypatch
+):
     db_path = tmp_path / "sessions.db"
     SQLiteStore(str(db_path))
     repo_path = tmp_path / "repo"
@@ -364,7 +378,9 @@ def test_start_unavailable_working_tree_status_displays_unavailable(tmp_path, mo
         "phasectl.cli.get_git_state",
         lambda path: {"branch": LIVE_BRANCH, "dirty": None, "dirty_count": None},
     )
-    monkeypatch.setattr("phasectl.cli.get_index_path", lambda project, config: repo_path)
+    monkeypatch.setattr(
+        "phasectl.cli.get_index_path", lambda project, config: repo_path
+    )
     monkeypatch.setattr("phasectl.resume.compress", lambda *a, **k: "resume")
 
     runner = CliRunner()
@@ -388,7 +404,9 @@ def test_start_preserves_git_state_when_resume_synthesis_fails(tmp_path, monkeyp
             "projects": {"proj": {"index_path": str(repo_path)}},
         },
     )
-    monkeypatch.setattr("phasectl.cli.get_index_path", lambda project, config: repo_path)
+    monkeypatch.setattr(
+        "phasectl.cli.get_index_path", lambda project, config: repo_path
+    )
     monkeypatch.setattr(
         "phasectl.cli.get_git_state",
         lambda path: {
@@ -407,7 +425,10 @@ def test_start_preserves_git_state_when_resume_synthesis_fails(tmp_path, monkeyp
     result = CliRunner().invoke(app, ["start", "--phase", "orient"])
 
     assert result.exit_code == 0, result.output
-    assert f"CURRENT_GIT_STATE: branch={LIVE_BRANCH} dirty=True dirty_count=2 head={HEAD_COMMIT}" in result.output
+    assert (
+        f"CURRENT_GIT_STATE: branch={LIVE_BRANCH} dirty=True dirty_count=2 head={HEAD_COMMIT}"
+        in result.output
+    )
     assert "[MODEL-DERIVED RESUME" not in result.output
 
 
@@ -444,7 +465,9 @@ def test_prior_session_memory_filters_by_origin_without_markers(tmp_path, monkey
     result = runner.invoke(app, ["chat", "hello", "--no-prior-session-memory"])
 
     assert result.exit_code == 0, result.output
-    assert not any("HISTORICAL-BY-ORIGIN" in str(m.get("content", "")) for m in captured[0])
+    assert not any(
+        "HISTORICAL-BY-ORIGIN" in str(m.get("content", "")) for m in captured[0]
+    )
 
 
 def test_legacy_unknown_origin_rows_survive_migration(tmp_path):
@@ -490,7 +513,9 @@ def test_legacy_unknown_origin_rows_survive_migration(tmp_path):
     assert rows[0]["content"] == "LEGACY-CONTENT"
     assert rows[0]["origin"] is None
 
-    columns = {r["name"] for r in store.conn.execute("PRAGMA table_info(turns)").fetchall()}
+    columns = {
+        r["name"] for r in store.conn.execute("PRAGMA table_info(turns)").fetchall()
+    }
     assert "origin" in columns
 
 
@@ -511,7 +536,9 @@ def test_legacy_unknown_system_row_historical_looking_excluded(tmp_path, monkeyp
     result = runner.invoke(app, ["chat", "hello", "--no-prior-session-memory"])
 
     assert result.exit_code == 0, result.output
-    assert not any("LEGACY-HISTORICAL" in str(m.get("content", "")) for m in captured[0])
+    assert not any(
+        "LEGACY-HISTORICAL" in str(m.get("content", "")) for m in captured[0]
+    )
 
 
 def test_legacy_unknown_system_row_ordinary_looking_excluded(tmp_path, monkeypatch):
@@ -531,7 +558,9 @@ def test_legacy_unknown_system_row_ordinary_looking_excluded(tmp_path, monkeypat
     result = runner.invoke(app, ["chat", "hello", "--no-prior-session-memory"])
 
     assert result.exit_code == 0, result.output
-    assert not any("ORDINARY-LEGACY-SYSTEM-TURN" in str(m.get("content", "")) for m in captured[0])
+    assert not any(
+        "ORDINARY-LEGACY-SYSTEM-TURN" in str(m.get("content", "")) for m in captured[0]
+    )
 
 
 def test_legacy_unknown_conversation_turn_remains_available(tmp_path, monkeypatch):
@@ -559,17 +588,31 @@ def test_legacy_unknown_conversation_turn_remains_available(tmp_path, monkeypatc
 
     assert result.exit_code == 0, result.output
     assert any("LEGACY-USER-TURN" in str(m.get("content", "")) for m in captured[0])
-    assert any("LEGACY-ASSISTANT-TURN" in str(m.get("content", "")) for m in captured[0])
+    assert any(
+        "LEGACY-ASSISTANT-TURN" in str(m.get("content", "")) for m in captured[0]
+    )
 
 
-def test_chat_spoofed_model_current_state_does_not_replace_cli_observation(tmp_path, monkeypatch):
+def test_chat_spoofed_model_current_state_does_not_replace_cli_observation(
+    tmp_path, monkeypatch
+):
     runner, calls, captured, repo_path, store = _chat_setup(
-        tmp_path, monkeypatch, {"branch": LIVE_BRANCH, "dirty": False, "dirty_count": 0, "last_commit": {"hash": HEAD_COMMIT, "subject": "s", "when": "now"}}
+        tmp_path,
+        monkeypatch,
+        {
+            "branch": LIVE_BRANCH,
+            "dirty": False,
+            "dirty_count": 0,
+            "last_commit": {"hash": HEAD_COMMIT, "subject": "s", "when": "now"},
+        },
     )
 
     def fake_chat(**kwargs):
         captured.append(kwargs["messages"])
-        return f"assistant reply: CURRENT_GIT_STATE: branch={HIST_BRANCH} head=deadbeef", 0
+        return (
+            f"assistant reply: CURRENT_GIT_STATE: branch={HIST_BRANCH} head=deadbeef",
+            0,
+        )
 
     monkeypatch.setattr("phasectl.cli.api_chat", fake_chat)
 
@@ -579,4 +622,7 @@ def test_chat_spoofed_model_current_state_does_not_replace_cli_observation(tmp_p
     assert f"CURRENT_GIT_STATE: branch={LIVE_BRANCH}" in result.output
     assert f"head={HEAD_COMMIT}" in result.output
     assert "assistant reply: CURRENT_GIT_STATE" in result.output
-    assert f"CURRENT_GIT_STATE: branch={HIST_BRANCH}" not in result.output.split("assistant reply", 1)[0]
+    assert (
+        f"CURRENT_GIT_STATE: branch={HIST_BRANCH}"
+        not in result.output.split("assistant reply", 1)[0]
+    )

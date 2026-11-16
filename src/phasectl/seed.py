@@ -66,7 +66,9 @@ def load_seed_files(
             continue
         ext = os.path.splitext(p)[1].lower()
         if ext not in SUPPORTED_EXTS:
-            diag(f"[seed] unsupported ext {ext}: {p} (supported: {sorted(SUPPORTED_EXTS)})")
+            diag(
+                f"[seed] unsupported ext {ext}: {p} (supported: {sorted(SUPPORTED_EXTS)})"
+            )
             continue
         text, truncated = load_seed(p)
         if not text:

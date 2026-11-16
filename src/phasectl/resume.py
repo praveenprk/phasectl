@@ -56,8 +56,12 @@ def get_git_state(repo_path: str) -> dict:
             stat_lines = stat_lines[:12] + [f"... ({len(stat_lines) - 12} more)"]
         state["diffstat"] = "\n".join(stat_lines)
 
-    refs = _run_git(repo_path, ["for-each-ref", "--format=%(refname:short)", "refs/heads"])
-    state["local_branches"] = None if refs is None else [r.strip() for r in refs.splitlines() if r.strip()]
+    refs = _run_git(
+        repo_path, ["for-each-ref", "--format=%(refname:short)", "refs/heads"]
+    )
+    state["local_branches"] = (
+        None if refs is None else [r.strip() for r in refs.splitlines() if r.strip()]
+    )
 
     last = _run_git(repo_path, ["log", "-1", "--format=%h|%s|%cr"])
     if last is None:

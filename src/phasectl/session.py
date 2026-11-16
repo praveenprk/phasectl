@@ -34,11 +34,17 @@ def open_session(store: SQLiteStore, project: str, phase: str) -> Session:
     )
 
 
-def close_session(store: SQLiteStore, session_id: str, phase: str, summary: str, total_tokens: int) -> None:
-    store.close_session(id=session_id, phase=phase, summary=summary, total_tokens=total_tokens)
+def close_session(
+    store: SQLiteStore, session_id: str, phase: str, summary: str, total_tokens: int
+) -> None:
+    store.close_session(
+        id=session_id, phase=phase, summary=summary, total_tokens=total_tokens
+    )
 
 
-def load_prior_session(store: SQLiteStore, project: str) -> Optional[tuple[dict, list[dict]]]:
+def load_prior_session(
+    store: SQLiteStore, project: str
+) -> Optional[tuple[dict, list[dict]]]:
     session_data = store.get_last_session(project)
     if not session_data:
         return None

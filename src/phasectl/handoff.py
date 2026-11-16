@@ -23,7 +23,8 @@ def is_conversation_turn(turn: dict) -> bool:
 
 def source_turns(turns: list[dict]) -> list[dict]:
     return [
-        t for t in turns
+        t
+        for t in turns
         if t.get("phase") != "_compression"
         and (is_conversation_turn(t) or t.get("origin") == CARRIED_ORIGIN)
     ]
@@ -87,8 +88,7 @@ def references(turns: list[dict]) -> list[str]:
 
 def last_conversation_turns(turns: list[dict], n: int = 2) -> list[dict]:
     conversation = [
-        t for t in turns
-        if t.get("phase") != "_compression" and is_conversation_turn(t)
+        t for t in turns if t.get("phase") != "_compression" and is_conversation_turn(t)
     ]
     return conversation[-n:] if n else []
 
@@ -100,7 +100,9 @@ def _format_turns(turns: list[dict]) -> str:
 def build_snapshot(session_id: str, turns: list[dict]) -> str:
     """SPEC-001 deterministic snapshot."""
     counted = [t for t in turns if t.get("phase") != "_compression"]
-    parts = [f"SNAPSHOT {session_id[:8]} (deterministic, verbatim from {len(counted)} stored turns)"]
+    parts = [
+        f"SNAPSHOT {session_id[:8]} (deterministic, verbatim from {len(counted)} stored turns)"
+    ]
 
     lines = decision_lines(turns)
     if lines:
@@ -119,7 +121,9 @@ def build_snapshot(session_id: str, turns: list[dict]) -> str:
     return "\n".join(parts)
 
 
-def build_prior_decisions_block(prior_session: dict | None, prior_turns: list[dict] | None) -> str:
+def build_prior_decisions_block(
+    prior_session: dict | None, prior_turns: list[dict] | None
+) -> str:
     """SPEC-002 `prior_decisions` turn, from the prior session's stored turns."""
     if not prior_session:
         return "PRIOR_DECISIONS: unavailable (no closed session for this project)"
@@ -134,7 +138,9 @@ def build_prior_decisions_block(prior_session: dict | None, prior_turns: list[di
     return header + "\n" + "\n".join(f"- {line}" for line in lines)
 
 
-def build_prior_turns_block(prior_session: dict | None, prior_turns: list[dict] | None) -> str:
+def build_prior_turns_block(
+    prior_session: dict | None, prior_turns: list[dict] | None
+) -> str:
     """SPEC-002 `prior_turns` turn: the prior session's last two conversation turns."""
     if not prior_session:
         return "PRIOR_LAST_TURNS: unavailable (no closed session for this project)"
@@ -152,7 +158,12 @@ def build_prior_turns_block(prior_session: dict | None, prior_turns: list[dict] 
 _MAX_STATUS_LINES = 50
 
 
-HISTORICAL_ORIGINS = ("prior_decisions", "prior_turns", "agent_context", "prior_session")
+HISTORICAL_ORIGINS = (
+    "prior_decisions",
+    "prior_turns",
+    "agent_context",
+    "prior_session",
+)
 
 
 def history_conflict_line(git_state: dict, history_texts: list[str]) -> str:
@@ -173,7 +184,9 @@ def history_conflict_line(git_state: dict, history_texts: list[str]) -> str:
     return f"HISTORY_VS_LIVE: historical context mentions branch {names}; the live branch is {live}."
 
 
-def format_live_git_block(git_state: dict, history_texts: list[str] | None = None) -> str:
+def format_live_git_block(
+    git_state: dict, history_texts: list[str] | None = None
+) -> str:
     """SPEC-002 live git block. Computed from git at invocation; never from history."""
     if not git_state.get("branch"):
         return "CURRENT_GIT_STATE: unavailable"
@@ -183,16 +196,22 @@ def format_live_git_block(git_state: dict, history_texts: list[str] | None = Non
     last_commit = git_state.get("last_commit")
     head = last_commit.get("hash") if isinstance(last_commit, dict) else None
     lines = [
-        "CURRENT_GIT_STATE: " + " ".join([
-            f"branch={git_state['branch']}",
-            "dirty=" + ("unavailable" if dirty is None else str(bool(dirty))),
-            "dirty_count=" + ("unavailable" if dirty_count is None else str(dirty_count)),
-            f"head={head}" if head else "head=unavailable",
-        ])
+        "CURRENT_GIT_STATE: "
+        + " ".join(
+            [
+                f"branch={git_state['branch']}",
+                "dirty=" + ("unavailable" if dirty is None else str(bool(dirty))),
+                "dirty_count="
+                + ("unavailable" if dirty_count is None else str(dirty_count)),
+                f"head={head}" if head else "head=unavailable",
+            ]
+        )
     ]
 
     if head:
-        lines.append(f"CURRENT_GIT_HEAD: {head} {last_commit.get('subject', '')}".rstrip())
+        lines.append(
+            f"CURRENT_GIT_HEAD: {head} {last_commit.get('subject', '')}".rstrip()
+        )
     else:
         lines.append("CURRENT_GIT_HEAD: unavailable")
 

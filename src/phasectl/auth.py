@@ -73,9 +73,18 @@ def _has_secret_tool() -> bool:
 def _keychain_get() -> str | None:
     try:
         result = subprocess.run(
-            ["security", "find-generic-password", "-s", _KEYCHAIN_SERVICE,
-             "-a", _KEYCHAIN_ACCOUNT, "-w"],
-            capture_output=True, text=True, check=False,
+            [
+                "security",
+                "find-generic-password",
+                "-s",
+                _KEYCHAIN_SERVICE,
+                "-a",
+                _KEYCHAIN_ACCOUNT,
+                "-w",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
         )
     except (FileNotFoundError, OSError):
         return None
@@ -88,9 +97,20 @@ def _keychain_get() -> str | None:
 def _keychain_set(key: str) -> bool:
     try:
         result = subprocess.run(
-            ["security", "add-generic-password", "-U",
-             "-s", _KEYCHAIN_SERVICE, "-a", _KEYCHAIN_ACCOUNT, "-w", key],
-            capture_output=True, text=True, check=False,
+            [
+                "security",
+                "add-generic-password",
+                "-U",
+                "-s",
+                _KEYCHAIN_SERVICE,
+                "-a",
+                _KEYCHAIN_ACCOUNT,
+                "-w",
+                key,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
         )
     except (FileNotFoundError, OSError):
         return False
@@ -100,9 +120,17 @@ def _keychain_set(key: str) -> bool:
 def _keychain_delete() -> bool:
     try:
         result = subprocess.run(
-            ["security", "delete-generic-password",
-             "-s", _KEYCHAIN_SERVICE, "-a", _KEYCHAIN_ACCOUNT],
-            capture_output=True, text=True, check=False,
+            [
+                "security",
+                "delete-generic-password",
+                "-s",
+                _KEYCHAIN_SERVICE,
+                "-a",
+                _KEYCHAIN_ACCOUNT,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
         )
     except (FileNotFoundError, OSError):
         return False
@@ -113,7 +141,9 @@ def _secret_service_get() -> str | None:
     try:
         result = subprocess.run(
             ["secret-tool", "lookup", *_SECRET_ATTRS],
-            capture_output=True, text=True, check=False,
+            capture_output=True,
+            text=True,
+            check=False,
         )
     except (FileNotFoundError, OSError):
         return None
@@ -127,7 +157,10 @@ def _secret_service_set(key: str) -> bool:
     try:
         result = subprocess.run(
             ["secret-tool", "store", "--label", _SECRET_LABEL, *_SECRET_ATTRS],
-            input=key, capture_output=True, text=True, check=False,
+            input=key,
+            capture_output=True,
+            text=True,
+            check=False,
         )
     except (FileNotFoundError, OSError):
         return False
@@ -138,7 +171,9 @@ def _secret_service_delete() -> bool:
     try:
         result = subprocess.run(
             ["secret-tool", "clear", *_SECRET_ATTRS],
-            capture_output=True, text=True, check=False,
+            capture_output=True,
+            text=True,
+            check=False,
         )
     except (FileNotFoundError, OSError):
         return False

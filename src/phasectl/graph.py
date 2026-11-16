@@ -99,6 +99,7 @@ class GraphStore:
     def __init__(self, path: str | None = None):
         if path is None:
             from .config import get_config_dir
+
             path = str(get_config_dir() / "graph.json")
         self.path = path
         Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -197,22 +198,28 @@ class GraphStore:
                 rel = edge_attrs.get("rel")
                 t = self.G.nodes[target]
                 if rel == "PROGRESSED" and t.get("kind") == "RFC":
-                    rfcs.append({
-                        "id": t.get("id", ""),
-                        "status": t.get("status", ""),
-                        "title": t.get("title", ""),
-                    })
+                    rfcs.append(
+                        {
+                            "id": t.get("id", ""),
+                            "status": t.get("status", ""),
+                            "title": t.get("title", ""),
+                        }
+                    )
                 elif rel == "LOGGED" and t.get("kind") == "Decision":
-                    decisions.append({
-                        "id": t.get("id", ""),
-                        "summary": t.get("summary", ""),
-                    })
-            sessions.append({
-                "id": attrs.get("id", ""),
-                "created_at": attrs.get("created_at", ""),
-                "rfcs": rfcs,
-                "decisions": decisions,
-            })
+                    decisions.append(
+                        {
+                            "id": t.get("id", ""),
+                            "summary": t.get("summary", ""),
+                        }
+                    )
+            sessions.append(
+                {
+                    "id": attrs.get("id", ""),
+                    "created_at": attrs.get("created_at", ""),
+                    "rfcs": rfcs,
+                    "decisions": decisions,
+                }
+            )
         sessions.sort(key=lambda s: s.get("created_at", ""), reverse=True)
         return {"sessions": sessions}
 
@@ -221,13 +228,15 @@ class GraphStore:
         sessions = []
         for s in full["sessions"][:5]:
             for r in s.get("rfcs", []):
-                sessions.append({
-                    "session_id": s["id"],
-                    "created_at": s["created_at"],
-                    "rfc_id": r["id"],
-                    "rfc_status": r["status"],
-                    "rfc_title": r["title"],
-                })
+                sessions.append(
+                    {
+                        "session_id": s["id"],
+                        "created_at": s["created_at"],
+                        "rfc_id": r["id"],
+                        "rfc_status": r["status"],
+                        "rfc_title": r["title"],
+                    }
+                )
         return {"sessions": sessions}
 
     def extract_rfcs_and_decisions(self, summary: str) -> tuple[list[str], list[str]]:

@@ -67,6 +67,7 @@ def _provider_cfg(config: dict) -> dict:
 class AnthropicProvider(LLMProvider):
     def __init__(self, config: dict):
         from anthropic import Anthropic
+
         p = _provider_cfg(config)
         self._model = p.get("model") or "claude-sonnet-4-6"
         self._compression_model = (
@@ -101,15 +102,18 @@ class AnthropicProvider(LLMProvider):
             if btype == "text":
                 text_parts.append(block.text)
             elif btype == "tool_use":
-                tool_calls.append({
-                    "id": block.id,
-                    "name": block.name,
-                    "arguments": dict(block.input) if block.input else {},
-                })
+                tool_calls.append(
+                    {
+                        "id": block.id,
+                        "name": block.name,
+                        "arguments": dict(block.input) if block.input else {},
+                    }
+                )
         return "\n".join(text_parts), tool_calls
 
     def compress(self, system, content, max_tokens):
         from anthropic import AuthenticationError
+
         try:
             response = self._client.messages.create(
                 model=self._compression_model,
@@ -133,14 +137,18 @@ def _to_anthropic_messages(messages: list[dict]) -> list[dict]:
     for m in messages:
         role = m.get("role")
         if role == "tool":
-            out.append({
-                "role": "user",
-                "content": [{
-                    "type": "tool_result",
-                    "tool_use_id": m["tool_call_id"],
-                    "content": m.get("content", ""),
-                }],
-            })
+            out.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": m["tool_call_id"],
+                            "content": m.get("content", ""),
+                        }
+                    ],
+                }
+            )
             continue
         tool_calls = m.get("tool_calls")
         if role == "assistant" and tool_calls:
@@ -149,12 +157,14 @@ def _to_anthropic_messages(messages: list[dict]) -> list[dict]:
             if text:
                 blocks.append({"type": "text", "text": text})
             for tc in tool_calls:
-                blocks.append({
-                    "type": "tool_use",
-                    "id": tc["id"],
-                    "name": tc["name"],
-                    "input": tc.get("arguments", {}) or {},
-                })
+                blocks.append(
+                    {
+                        "type": "tool_use",
+                        "id": tc["id"],
+                        "name": tc["name"],
+                        "input": tc.get("arguments", {}) or {},
+                    }
+                )
             out.append({"role": "assistant", "content": blocks})
             continue
         out.append({"role": role, "content": m.get("content", "")})
@@ -181,6 +191,7 @@ class OpenAICompatProvider(LLMProvider):
 
     def __init__(self, config: dict):
         import httpx
+
         p = _provider_cfg(config)
         backend = (p.get("backend") or "openai").strip()
         base = (p.get("api_base") or "").strip()
@@ -218,6 +229,7 @@ class OpenAICompatProvider(LLMProvider):
 
     def _post(self, payload: dict) -> dict:
         import httpx
+
         url = f"{self._base}/chat/completions"
         try:
             resp = self._client.post(url, json=payload, headers=self._headers)
@@ -226,9 +238,7 @@ class OpenAICompatProvider(LLMProvider):
         if resp.status_code == 401:
             raise InvalidAPIKey()
         if resp.status_code >= 400:
-            raise RuntimeError(
-                f"{url} → {resp.status_code}: {resp.text[:400]}"
-            )
+            raise RuntimeError(f"{url} → {resp.status_code}: {resp.text[:400]}")
         return resp.json()
 
     def chat(self, system, messages, tools, temperature, max_tokens):
@@ -253,14 +263,17 @@ class OpenAICompatProvider(LLMProvider):
             args_raw = fn.get("arguments", "{}")
             try:
                 import json
+
                 args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
             except (ValueError, TypeError):
                 args = {}
-            tool_calls.append({
-                "id": tc.get("id") or fn.get("name", ""),
-                "name": fn.get("name", ""),
-                "arguments": args or {},
-            })
+            tool_calls.append(
+                {
+                    "id": tc.get("id") or fn.get("name", ""),
+                    "name": fn.get("name", ""),
+                    "arguments": args or {},
+                }
+            )
         return text, tool_calls
 
     def compress(self, system, content, max_tokens):
@@ -282,35 +295,40 @@ class OpenAICompatProvider(LLMProvider):
 
 def _to_openai_messages(system: str, messages: list[dict]) -> list[dict]:
     import json
+
     out: list[dict] = []
     if system:
         out.append({"role": "system", "content": system})
     for m in messages:
         role = m.get("role")
         if role == "tool":
-            out.append({
-                "role": "tool",
-                "tool_call_id": m["tool_call_id"],
-                "content": m.get("content", ""),
-            })
+            out.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": m["tool_call_id"],
+                    "content": m.get("content", ""),
+                }
+            )
             continue
         tool_calls = m.get("tool_calls")
         if role == "assistant" and tool_calls:
-            out.append({
-                "role": "assistant",
-                "content": m.get("content", "") or None,
-                "tool_calls": [
-                    {
-                        "id": tc["id"],
-                        "type": "function",
-                        "function": {
-                            "name": tc["name"],
-                            "arguments": json.dumps(tc.get("arguments", {}) or {}),
-                        },
-                    }
-                    for tc in tool_calls
-                ],
-            })
+            out.append(
+                {
+                    "role": "assistant",
+                    "content": m.get("content", "") or None,
+                    "tool_calls": [
+                        {
+                            "id": tc["id"],
+                            "type": "function",
+                            "function": {
+                                "name": tc["name"],
+                                "arguments": json.dumps(tc.get("arguments", {}) or {}),
+                            },
+                        }
+                        for tc in tool_calls
+                    ],
+                }
+            )
             continue
         out.append({"role": role, "content": m.get("content", "")})
     return out
@@ -322,7 +340,9 @@ def _tool_to_openai(tool: dict) -> dict:
         "function": {
             "name": tool["name"],
             "description": tool.get("description", ""),
-            "parameters": tool.get("input_schema", {"type": "object", "properties": {}}),
+            "parameters": tool.get(
+                "input_schema", {"type": "object", "properties": {}}
+            ),
         },
     }
 

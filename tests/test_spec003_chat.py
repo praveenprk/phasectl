@@ -48,8 +48,12 @@ def _forbid_compression(monkeypatch):
 
 def _add(store, session_id, role, content, origin="__role__"):
     store.add_turn(
-        session_id=session_id, phase="design", role=role, content=content,
-        token_estimate=estimate_tokens(content), origin=role if origin == "__role__" else origin,
+        session_id=session_id,
+        phase="design",
+        role=role,
+        content=content,
+        token_estimate=estimate_tokens(content),
+        origin=role if origin == "__role__" else origin,
     )
 
 
@@ -58,7 +62,13 @@ def _over_budget_session(store, with_system=False):
     budget = load_phase("design").token_budget
     if with_system:
         for origin in SYSTEM_ORIGINS:
-            _add(store, session.id, "system", f"{origin} block " + "s" * (budget * 2), origin=origin)
+            _add(
+                store,
+                session.id,
+                "system",
+                f"{origin} block " + "s" * (budget * 2),
+                origin=origin,
+            )
     for i in range(4):
         _add(store, session.id, "user", f"u{i} " + "x" * (budget * 2))
         _add(store, session.id, "assistant", f"a{i} " + "y" * (budget * 2))
@@ -108,7 +118,10 @@ def test_inv_003_03_compress_flag_warns(env, monkeypatch):
     result = _chat("hello", "--compress", "--quiet")
 
     assert result.exit_code == 0, result.output
-    assert "warning: tail compression may cause signal loss due to compression" in result.stderr
+    assert (
+        "warning: tail compression may cause signal loss due to compression"
+        in result.stderr
+    )
     turns = store.get_turns(session.id)
     conversation = [t for t in turns if t["origin"] in ("user", "assistant")]
     compressed = [t["content"][:2] for t in conversation if t["compressed"]]
@@ -147,7 +160,10 @@ def test_inv_003_05_prior_turns_included_by_default(env, monkeypatch):
     assert runner.invoke(app, ["chat", "where were we?"]).exit_code == 0
 
     contents = [m["content"] for m in sent[0]]
-    assert any("PRIOR_LAST_TURNS" in c and "[user]: next step: implement import" in c for c in contents)
+    assert any(
+        "PRIOR_LAST_TURNS" in c and "[user]: next step: implement import" in c
+        for c in contents
+    )
     assert not any("MODEL PROSE SHOULD STAY OUT" in c for c in contents)
 
 
@@ -174,11 +190,20 @@ def test_inv_003_08_no_active_session(env):
 def test_inv_003_09_chat_sends_full_live_git_block(env, monkeypatch):
     store, sent = env
     open_session(store, "proj", "design")
-    monkeypatch.setattr("phasectl.cli.get_git_state", lambda path: {
-        "branch": "feat/importer", "dirty": True, "dirty_count": 2,
-        "status_lines": [" M cli.py", "?? notes.txt"],
-        "last_commit": {"hash": "189dad5", "subject": "feat(importer): parse csv rows", "when": "now"},
-    })
+    monkeypatch.setattr(
+        "phasectl.cli.get_git_state",
+        lambda path: {
+            "branch": "feat/importer",
+            "dirty": True,
+            "dirty_count": 2,
+            "status_lines": [" M cli.py", "?? notes.txt"],
+            "last_commit": {
+                "hash": "189dad5",
+                "subject": "feat(importer): parse csv rows",
+                "when": "now",
+            },
+        },
+    )
     _forbid_compression(monkeypatch)
 
     result = _chat("where are we?")
@@ -198,14 +223,37 @@ def test_inv_003_09_chat_sends_full_live_git_block(env, monkeypatch):
 def test_inv_003_10_chat_history_conflict_line(env, monkeypatch):
     store, sent = env
     session = open_session(store, "proj", "design")
-    _add(store, session.id, "system", "PRIOR_LAST_TURNS (historical…):\n[user]: on feat/storage", origin="prior_turns")
-    _add(store, session.id, "system", "old summary on fix/legacy-x", origin="prior_session")
+    _add(
+        store,
+        session.id,
+        "system",
+        "PRIOR_LAST_TURNS (historical…):\n[user]: on feat/storage",
+        origin="prior_turns",
+    )
+    _add(
+        store,
+        session.id,
+        "system",
+        "old summary on fix/legacy-x",
+        origin="prior_session",
+    )
     _add(store, session.id, "user", "I just left fix/other-y")
-    monkeypatch.setattr("phasectl.cli.get_git_state", lambda path: {
-        "branch": "feat/importer", "dirty": False, "dirty_count": 0, "status_lines": [],
-        "last_commit": {"hash": "189dad5", "subject": "s", "when": "now"},
-        "local_branches": ["feat/storage", "feat/importer", "fix/legacy-x", "fix/other-y"],
-    })
+    monkeypatch.setattr(
+        "phasectl.cli.get_git_state",
+        lambda path: {
+            "branch": "feat/importer",
+            "dirty": False,
+            "dirty_count": 0,
+            "status_lines": [],
+            "last_commit": {"hash": "189dad5", "subject": "s", "when": "now"},
+            "local_branches": [
+                "feat/storage",
+                "feat/importer",
+                "fix/legacy-x",
+                "fix/other-y",
+            ],
+        },
+    )
     _forbid_compression(monkeypatch)
 
     assert _chat("where are we?").exit_code == 0
