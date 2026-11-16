@@ -50,9 +50,9 @@ SPEC says : ENG-STD-004 §6.1 — "Each project MUST pin one formatter and one l
 Code does : No formatter or linter is configured in pyproject.toml. There is no CI (.github/ absent), so tests and checks run only by hand.
 Severity  : HIGH
 Impact    : Style and test regressions are caught only if someone remembers to run them.
-Fix       : Pin a formatter and linter (dev dependency + config). Add CI running them, `python -m pytest`, and `scripts/hooks/test`.
-When      : Next chore change.
-Status    : OPEN
+Fix       : ruff 0.17.5 pinned as the formatter and linter (pyproject.toml, explicit rule set E4, E7, E9, F, I). .github/workflows/ci.yml runs `ruff check`, `ruff format --check`, `python -m pytest` on Python 3.11 and 3.13, and `scripts/hooks/test`. The ruleset `main-branch-integrity` requires all of them.
+When      : 2026-11-16
+Status    : RESOLVED
 Anchor    : DECISION-001
 
 ### V-ENG-005-01
