@@ -19,6 +19,8 @@ Before opening a PR, run the pytest suite and the end-to-end checks:
 
 ```sh
 python -m pytest        # tests/ (tests/field is excluded; see scripts/field-test.sh)
+ruff check .            # linter, pinned in pyproject.toml (dev extra)
+ruff format --check .   # formatter; `ruff format .` fixes
 phasectl check          # every subsystem: config, auth, db, phases, index, indexer, git
 phasectl loose          # smoke-tests the offline git walker
 ```
