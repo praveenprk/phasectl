@@ -14,7 +14,7 @@ def _git(repo, *args):
 def _make_repo(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
-    _git(repo, "init", "-q")
+    _git(repo, "init", "-q", "-b", "main")
     _git(repo, "config", "user.email", "test@example.com")
     _git(repo, "config", "user.name", "Test User")
     (repo / "file.txt").write_text("revision X\n")
@@ -200,7 +200,7 @@ def test_integrated_boundary_scenario_d_explicit_spoofed_model_output(
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "file.txt").write_text("Y\n")
-    _git(repo, "init", "-q")
+    _git(repo, "init", "-q", "-b", "main")
     _git(repo, "config", "user.email", "test@example.com")
     _git(repo, "config", "user.name", "Test User")
     _git(repo, "add", "file.txt")
