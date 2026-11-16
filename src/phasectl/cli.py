@@ -4,60 +4,73 @@
 # No command may create, modify, or delete files under the project path.
 # This is a design constraint, not an implementation detail.
 
-import sys
 import json
+import os
 import shlex
 import subprocess
-import typer
+import sys
 import tomllib
-import os
 
-from .store import SQLiteStore
-from .session import open_session, close_session, load_prior_session
-from .phases import load_phase, list_phases
-from .context import (
-    estimate_tokens,
-    should_compress,
-    compress_tail,
-    build_injection_block,
-)
-from .handoff import (
-    build_prior_decisions_block,
-    build_prior_turns_block,
-    build_snapshot,
-    format_live_git_block,
-    HISTORICAL_ORIGINS,
-)
+import typer
+
 from .api import (
     chat as api_chat,
-    compress as api_compress,
-    persist_session_graph,
-    extract_rfcs_and_decisions,
 )
+from .api import (
+    compress as api_compress,
+)
+from .api import (
+    extract_rfcs_and_decisions,
+    persist_session_graph,
+)
+from .auth import AuthError, key_source, remove_api_key, save_api_key
 from .config import (
+    get_coding_agent_projects_dir,
     get_config_file,
     get_db_path,
     get_index_path,
     set_index_path,
-    get_coding_agent_projects_dir,
 )
-from .tools import ToolExecutor
-from .resume import (
-    get_git_state,
-    find_agent_session,
-    extract_last_context,
-    build_resume_block,
+from .context import (
+    build_injection_block,
+    compress_tail,
+    estimate_tokens,
+    should_compress,
+)
+from .handoff import (
+    HISTORICAL_ORIGINS,
+    build_prior_decisions_block,
+    build_prior_turns_block,
+    build_snapshot,
+    format_live_git_block,
+)
+from .loose import (
+    collect as loose_collect,
 )
 from .loose import (
     is_git_repo,
-    collect as loose_collect,
+)
+from .loose import (
     render_human as loose_render_human,
+)
+from .loose import (
     resolve_repo as loose_resolve_repo,
+)
+from .loose import (
     synthesize_top_line as loose_synthesize_top_line,
 )
-from .seed import load_seed_files, seed_turn_text, summarize_seed
-from .auth import AuthError, key_source, save_api_key, remove_api_key
+from .phases import list_phases, load_phase
 from .progress import Progress
+from .resume import (
+    build_resume_block,
+    extract_last_context,
+    find_agent_session,
+    get_git_state,
+)
+from .seed import load_seed_files, seed_turn_text, summarize_seed
+from .session import close_session, load_prior_session, open_session
+from .store import SQLiteStore
+from .tools import ToolExecutor
 
 
 def _provider_label(config: dict) -> str:
@@ -1432,7 +1445,7 @@ def check(
 
     # git — prefer the indexed repo, fall back to cwd
     try:
-        from .loose import is_git_repo, get_current_branch, get_uncommitted
+        from .loose import get_current_branch, get_uncommitted, is_git_repo
         repo = idx_path or os.getcwd()
         if is_git_repo(repo):
             branch = get_current_branch(repo) or "detached"

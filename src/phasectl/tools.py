@@ -19,7 +19,6 @@ import shlex
 import shutil
 import subprocess
 
-
 _DEFAULT_INDEXER_COMMAND = "codegraph"
 
 _SEARCH_SYMBOLS_TOOL = {

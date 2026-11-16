@@ -6,7 +6,6 @@ from typing import Any
 
 import networkx as nx
 
-
 _DECISION_REFERENCE_RE = re.compile(
     r"(?<![\w-])DECISION-[A-Z0-9]+(?:-[A-Z0-9]+)*(?![\w-])"
 )

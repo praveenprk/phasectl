@@ -24,7 +24,6 @@ from phasectl.handoff import build_prior_decisions_block
 from phasectl.session import open_session
 from phasectl.store import SQLiteStore
 
-
 SUMMARY = (
     "**Decisions:**\n\n"
     "* Use SQLite for storage (DECISION-001)\n"
@@ -54,7 +53,7 @@ def test_block_deduplicates_lines_and_keeps_first_occurrence_order():
     summary = "DECISION-002 and DECISION-001 together.\nLater: DECISION-001 again.\n"
     block = build_prior_decisions_block({"id": "s1"}, [_user(summary), _user(summary)])
 
-    lines = [l for l in block.splitlines() if l.startswith("- ")]
+    lines = [line for line in block.splitlines() if line.startswith("- ")]
     assert lines == ["- [user] DECISION-002 and DECISION-001 together.", "- [user] Later: DECISION-001 again."]
 
 

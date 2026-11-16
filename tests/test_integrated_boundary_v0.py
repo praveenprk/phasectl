@@ -1,7 +1,5 @@
-import os
 import subprocess
 
-import pytest
 from typer.testing import CliRunner
 
 from phasectl.cli import app
@@ -55,7 +53,6 @@ def test_integrated_boundary_scenario_a_fresh_observation_defeats_stale_history(
     (repo / "file.txt").write_text("revision Y\n")
     _git(repo, "add", "file.txt")
     _git(repo, "commit", "-q", "-m", "revision Y")
-    sha_y = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
     sha_y_short = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=repo, text=True).strip()
 
     monkeypatch.setattr("phasectl.resume.compress", lambda *a, **k: "STALE: revision X remains current")
@@ -119,7 +116,7 @@ def test_integrated_boundary_scenario_b_history_disabled(tmp_path, monkeypatch):
 def test_integrated_boundary_scenario_c_unavailable_observation(tmp_path, monkeypatch):
     db_path = tmp_path / "sessions.db"
     store = SQLiteStore(str(db_path))
-    session = open_session(store, "proj", "orient")
+    open_session(store, "proj", "orient")
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -148,7 +145,7 @@ def test_integrated_boundary_scenario_c_unavailable_observation(tmp_path, monkey
 def test_integrated_boundary_scenario_d_explicit_spoofed_model_output(tmp_path, monkeypatch):
     db_path = tmp_path / "sessions.db"
     store = SQLiteStore(str(db_path))
-    session = open_session(store, "proj", "orient")
+    open_session(store, "proj", "orient")
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -159,7 +156,6 @@ def test_integrated_boundary_scenario_d_explicit_spoofed_model_output(tmp_path, 
     _git(repo, "add", "file.txt")
     _git(repo, "commit", "-q", "-m", "Y")
     sha_y = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
-    sha_y_short = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=repo, text=True).strip()
 
     config = _config(tmp_path, repo, db_path)
     monkeypatch.setattr("phasectl.cli._load_config", lambda: config)
@@ -169,7 +165,7 @@ def test_integrated_boundary_scenario_d_explicit_spoofed_model_output(tmp_path, 
 
     def fake_chat(**kwargs):
         captured.append(kwargs["messages"])
-        return f"assistant reply: CURRENT_GIT_STATE: branch=STALE-X head=deadbeef", 0
+        return "assistant reply: CURRENT_GIT_STATE: branch=STALE-X head=deadbeef", 0
 
     monkeypatch.setattr("phasectl.cli.api_chat", fake_chat)
 
@@ -177,7 +173,7 @@ def test_integrated_boundary_scenario_d_explicit_spoofed_model_output(tmp_path, 
     result = runner.invoke(app, ["chat", "hello"])
 
     assert result.exit_code == 0, result.output
-    assert f"CURRENT_GIT_STATE: branch=main" in result.output or f"head={sha_y}" in result.output
+    assert "CURRENT_GIT_STATE: branch=main" in result.output or f"head={sha_y}" in result.output
     before_model = result.output.split("assistant reply", 1)[0]
-    assert f"CURRENT_GIT_STATE: branch=STALE-X" not in before_model
+    assert "CURRENT_GIT_STATE: branch=STALE-X" not in before_model
     assert "assistant reply: CURRENT_GIT_STATE: branch=STALE-X" in result.output

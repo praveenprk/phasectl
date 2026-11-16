@@ -1,7 +1,6 @@
 import os
 import re
 import subprocess
-from pathlib import Path
 
 from .api import compress
 from .config import get_index_path

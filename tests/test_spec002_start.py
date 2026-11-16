@@ -336,7 +336,8 @@ def _git_repo(tmp_path):
 
     repo = tmp_path / "live"
     repo.mkdir()
-    run = lambda *a: subprocess.run(["git", *a], cwd=repo, check=True, capture_output=True)
+    def run(*a):
+        return subprocess.run(["git", *a], cwd=repo, check=True, capture_output=True)
     run("init", "-q", "-b", "main")
     run("config", "user.email", "t@example.invalid")
     run("config", "user.name", "t")
@@ -404,7 +405,7 @@ def test_inv_002_13_history_conflict_line(env, monkeypatch):
 
     assert ("HISTORY_VS_LIVE: historical context mentions branch feat/storage; "
             "the live branch is feat/importer.") in out.splitlines()
-    assert "main" not in [l for l in out.splitlines() if l.startswith("HISTORY_VS_LIVE")][0].split(";")[0]
+    assert "main" not in [line for line in out.splitlines() if line.startswith("HISTORY_VS_LIVE")][0].split(";")[0]
 
 
 def test_inv_002_13_no_line_without_conflict(env, monkeypatch):
