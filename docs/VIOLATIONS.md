@@ -22,6 +22,7 @@
 | V-ENG-006-01 | ENG-STD-006 §1 | HIGH | RESOLVED |
 | V-ENG-005-02 | ENG-STD-005 §1.3 | HIGH (proposed) | OPEN |
 | V-ENG-002-02 | ENG-STD-002 §1.1, §4.1 | CRITICAL (proposed) | OPEN |
+| V-ENG-004-03 | ENG-STD-004 §0, §6.1 | HIGH | OPEN |
 
 ---
 
@@ -92,5 +93,15 @@ Severity  : CRITICAL (per §4.1; proposed, governor to confirm)
 Impact    : The PRIOR_DECISIONS guarantees (verbatim, labelled historical, no model call, explicit when empty) are tested but not specified. They can change without a contract to check against.
 Fix       : Backfill: the `start` SPEC (V-ENG-002-01 order: close, then start) states the PRIOR_DECISIONS behaviour as invariants, and the existing tests map to them.
 When      : With the close/start SPECs (V-ENG-002-01).
+Status    : OPEN
+Anchor    : DECISION-001
+
+### V-ENG-004-03
+SPEC says : ENG-STD-004 §0.1 — code is any executable text, scripts included; §6.1 — "Each project MUST pin one formatter and one linter per language and run them in CI." ENG-DEC-015 Q-003: fmt_lint covers every language found in the repository.
+Code does : phasectl writes shell (scripts/field-test.sh, bash). CI pins ruff for Python only; no shell formatter or linter is pinned or run. shellcheck 0.11.0 reports SC1007 on scripts/field-test.sh:4 (`CDPATH= cd`), and shfmt 3.14.1 reports formatting drift.
+Severity  : HIGH
+Impact    : Shell defects and style drift in the field-test runner are caught only by hand.
+Fix       : Pin shellcheck and shfmt (dev extras), run both on phasectl's own shell in CI, fix the findings. scripts/hooks/ is vendored from eng-principles 74e7e76 and is not edited here: its lint and format belong upstream (shellcheck 0.11.0 reports SC2034 at scripts/hooks/pre-push:32).
+When      : This change.
 Status    : OPEN
 Anchor    : DECISION-001
