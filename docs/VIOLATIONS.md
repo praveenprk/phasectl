@@ -22,7 +22,7 @@
 | V-ENG-006-01 | ENG-STD-006 §1 | HIGH | RESOLVED |
 | V-ENG-005-02 | ENG-STD-005 §1.3 | HIGH (proposed) | OPEN |
 | V-ENG-002-02 | ENG-STD-002 §1.1, §4.1 | CRITICAL (proposed) | OPEN |
-| V-ENG-006-02 | ENG-STD-006 §2.4 | HIGH (proposed) | OPEN |
+| V-ENG-006-02 | ENG-STD-006 §2.4 | HIGH (proposed) | RESOLVED |
 
 ---
 
@@ -102,6 +102,6 @@ Code does : docs/conformance/phasectl-ICS.md marks ENG-STD-001 and ENG-STD-007 `
 Severity  : HIGH (proposed; governor to confirm)
 Impact    : A reader cannot tell an omission from a deliberate deferral, or what work would close it.
 Fix       : Give each `not assessed` row and clause its reason and what assessing it needs.
-When      : This change.
-Status    : OPEN
+When      : 2026-11-23
+Status    : RESOLVED — each `not assessed` row and clause in docs/conformance/phasectl-ICS.md states why and what assessing it needs. The ENG-STD-002 row, stale at `not yet`, is corrected to `partial` with its evidence
 Anchor    : DECISION-001
