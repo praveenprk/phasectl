@@ -22,7 +22,7 @@
 | V-ENG-006-01 | ENG-STD-006 §1 | HIGH | RESOLVED |
 | V-ENG-005-02 | ENG-STD-005 §1.3 | HIGH (proposed) | OPEN |
 | V-ENG-002-02 | ENG-STD-002 §1.1, §4.1 | CRITICAL (proposed) | OPEN |
-| V-ENG-004-03 | ENG-STD-004 §0, §6.1 | HIGH | OPEN |
+| V-ENG-004-03 | ENG-STD-004 §0, §6.1 | HIGH | RESOLVED |
 
 ---
 
@@ -102,6 +102,6 @@ Code does : phasectl writes shell (scripts/field-test.sh, bash). CI pins ruff fo
 Severity  : HIGH
 Impact    : Shell defects and style drift in the field-test runner are caught only by hand.
 Fix       : Pin shellcheck and shfmt (dev extras), run both on phasectl's own shell in CI, fix the findings. scripts/hooks/ is vendored from eng-principles 74e7e76 and is not edited here: its lint and format belong upstream (shellcheck 0.11.0 reports SC2034 at scripts/hooks/pre-push:32).
-When      : This change.
-Status    : OPEN
+When      : 2026-11-23
+Status    : RESOLVED — shellcheck 0.11.0.1 (shellcheck-py) and shfmt 3.14.1 (shfmt-py 4.2.0) pinned in pyproject.toml; .github/workflows/ci.yml job `shell-lint` runs both on scripts/field-test.sh; SC1007 fixed (`CDPATH=''`) and the file formatted (shfmt -i 4 -ci). SC2034 in the vendored pre-push is reported upstream to eng-principles
 Anchor    : DECISION-001
