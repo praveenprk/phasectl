@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 REPO="${PHASECTL_FIELD_REPO:-$HOME/Desktop/contextos}"
 OUTPUT="${PHASECTL_FIELD_OUTPUT:-$ROOT/.field-test}"
 PYTHON="${PHASECTL_FIELD_PYTHON:-}"
@@ -13,16 +13,22 @@ usage() {
 while (($#)); do
     case "$1" in
         --repo)
-            [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+            [[ $# -ge 2 ]] || {
+                usage >&2
+                exit 2
+            }
             REPO="$2"
             shift 2
             ;;
         --output)
-            [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+            [[ $# -ge 2 ]] || {
+                usage >&2
+                exit 2
+            }
             OUTPUT="$2"
             shift 2
             ;;
-        -h|--help)
+        -h | --help)
             usage
             exit 0
             ;;
@@ -65,11 +71,11 @@ printf 'phasectl field test\nrepository: %s\noutput: %s\npython: %s\ncommand: PY
     "$REPO" "$OUTPUT" "$PYTHON" "$ROOT" "$PYTHON" | tee "$LOG"
 
 PHASECTL_FIELD_REPO="$REPO" \
-PHASECTL_FIELD_OUTPUT="$OUTPUT" \
-PYTHONPATH="$ROOT/src" \
-PYTHONDONTWRITEBYTECODE=1 \
-PYTHONHASHSEED=0 \
-GIT_OPTIONAL_LOCKS=0 \
+    PHASECTL_FIELD_OUTPUT="$OUTPUT" \
+    PYTHONPATH="$ROOT/src" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONHASHSEED=0 \
+    GIT_OPTIONAL_LOCKS=0 \
     "$PYTHON" -m pytest -q -p no:cacheprovider "$ROOT/tests/field/test_field_runner.py" 2>&1 | tee -a "$LOG"
 STATUS=${PIPESTATUS[0]}
 
