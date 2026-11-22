@@ -35,7 +35,7 @@ jobs:
           python-version: "3.13"
       - run: pip install -e ".[dev]"
       - run: shellcheck scripts/field-test.sh
-      - run: shfmt -d -i 4 -ci scripts/field-test.sh
+      - run: shfmt -d -i 4 -ci -sr scripts/field-test.sh
 
   test:
     runs-on: ubuntu-latest
