@@ -22,6 +22,7 @@
 | V-ENG-006-01 | ENG-STD-006 §1 | HIGH | RESOLVED |
 | V-ENG-005-02 | ENG-STD-005 §1.3 | HIGH (proposed) | OPEN |
 | V-ENG-002-02 | ENG-STD-002 §1.1, §4.1 | CRITICAL (proposed) | OPEN |
+| V-ENG-006-02 | ENG-STD-006 §2.4 | HIGH (proposed) | RESOLVED |
 | V-ENG-004-03 | ENG-STD-004 §0, §6.1 | HIGH | RESOLVED |
 
 ---
@@ -95,6 +96,16 @@ Fix       : Backfill: the `start` SPEC (V-ENG-002-01 order: close, then start) s
 When      : With the close/start SPECs (V-ENG-002-01).
 Status    : OPEN
 Anchor    : DECISION-001
+
+
+### V-ENG-006-02
+SPEC says : ENG-STD-006 §2.4 (refined by ENG-DEC-015 Q-001) — a project ICS MAY use `not assessed`; "Each such row MUST state why it is not assessed and what assessing it needs."
+Code does : docs/conformance/phasectl-ICS.md marks ENG-STD-001 and ENG-STD-007 `not assessed` with no reason, and the ENG-STD-003 row leaves §0.5 and §0.6 "not yet assessed" with no reason.
+Severity  : HIGH (proposed; governor to confirm)
+Impact    : A reader cannot tell an omission from a deliberate deferral, or what work would close it.
+Fix       : Give each `not assessed` row and clause its reason and what assessing it needs.
+When      : 2026-11-23
+Status    : RESOLVED — each `not assessed` row and clause in docs/conformance/phasectl-ICS.md states why and what assessing it needs. The ENG-STD-002 row, stale at `not yet`, is corrected to `partial` with its evidence
 
 ### V-ENG-004-03
 SPEC says : ENG-STD-004 §0.1 — code is any executable text, scripts included; §6.1 — "Each project MUST pin one formatter and one linter per language and run them in CI." ENG-DEC-015 Q-003: fmt_lint covers every language found in the repository.
