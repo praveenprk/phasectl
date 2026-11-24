@@ -17,7 +17,7 @@
 |----|----------|----------|--------|
 | V-ENG-002-01 | ENG-STD-002 §1.1 | HIGH | OPEN |
 | V-ENG-004-01 | ENG-STD-004 §4.1 | HIGH | OPEN |
-| V-ENG-004-02 | ENG-STD-004 §6.1 | HIGH | OPEN |
+| V-ENG-004-02 | ENG-STD-004 §6.1 | HIGH | RESOLVED |
 | V-ENG-005-01 | ENG-STD-005 §1, §2.2 | HIGH | RESOLVED |
 | V-ENG-006-01 | ENG-STD-006 §1 | HIGH | RESOLVED |
 | V-ENG-005-02 | ENG-STD-005 §1.3 | HIGH (proposed) | OPEN |
