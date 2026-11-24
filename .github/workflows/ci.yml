@@ -1,8 +1,8 @@
 name: CI
 
-# Lint, format, tests and the vendored hook tests run on every PR
-# (eng-principles ENG-STD-004 §6.1, V-ENG-004-02). ruff is pinned in
-# pyproject.toml [project.optional-dependencies] dev.
+# Lint, format (Python and shell), tests and the vendored hook tests run on every PR
+# (eng-principles ENG-STD-004 §6.1, V-ENG-004-02, V-ENG-004-03). ruff, shellcheck and shfmt are
+# pinned in pyproject.toml [project.optional-dependencies] dev.
 on:
   pull_request:
   push:
@@ -22,6 +22,20 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
+
+  shell-lint:
+    # ENG-STD-004 §0, §6.1 (ENG-DEC-015 Q-003): shell is a language here.
+    # Only phasectl's own scripts. scripts/hooks/ is vendored from
+    # eng-principles; its lint and format belong upstream (V-ENG-004-03).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[dev]"
+      - run: shellcheck scripts/field-test.sh
+      - run: shfmt -d -i 4 -ci -sr scripts/field-test.sh
 
   test:
     runs-on: ubuntu-latest
