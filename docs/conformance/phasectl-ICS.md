@@ -4,7 +4,7 @@ This is the only place for phasectl's conformance status. Normative documents
 state none (eng-principles ENG-STD-006). Vocabulary:
 `conformant` / `partial` / `not yet` / `n/a`. No `conformant` without evidence.
 
-Date of last update: 2026-11-23
+Date of last update: 2026-11-25
 Baseline: origin/main 1639f2a. `python -m pytest`: 82 passed (Python 3.14, 2026-11-16).
 
 ## phasectl SPECs
@@ -23,3 +23,4 @@ DECISION-006). Per-invariant rows start here once they are closed.
 | ENG-STD-005 Change control | conformant | Ruleset `main-branch-integrity` and branch protection on main: PR required, linear history, no force push or deletion, required check `commit-check / check`, eng-principles' shared check on GitHub (ENG-STD-005 §1.5, ENG-DEC-009). scripts/hooks/ (commit-msg, pre-push, check-pr) vendored at eng-principles 74e7e76; scripts/hooks/test passes. AGENTS.md. b3a2376 stays unanchored (V-ENG-005-02, resolved forward only) | — |
 | ENG-STD-006 Registers | conformant | docs/DECISIONS.md, docs/VIOLATIONS.md, this file | — |
 | ENG-STD-007 Quality model | not assessed | Why: SPEC-001..003 are DRAFT and no release review record for v0.1.0 has been read against §2. Assessing needs: §1.1 — check whether each SPEC names the ISO/IEC 25010 characteristics it constrains; §2.1 — find or write the governor's release review for v0.1.0. §3 is n/a (no hardware) | — |
+| ENG-STD-008 Contributor readiness | partial | Checks run by the eng-principles audit (audit/audit.py, kind `python`). Each failing check is a V-ENG-008-NN entry in docs/VIOLATIONS.md, which holds its status. `about`, `signed` and `releases` are repository settings or release tags for the governor | see docs/VIOLATIONS.md |

@@ -24,6 +24,7 @@
 | V-ENG-002-02 | ENG-STD-002 §1.1, §4.1 | CRITICAL (proposed) | OPEN |
 | V-ENG-006-02 | ENG-STD-006 §2.4 | HIGH (proposed) | RESOLVED |
 | V-ENG-004-03 | ENG-STD-004 §0, §6.1 | HIGH | RESOLVED |
+| V-ENG-008-01 | ENG-STD-008 security | HIGH | RESOLVED |
 
 ---
 
@@ -115,4 +116,14 @@ Impact    : Shell defects and style drift in the field-test runner are caught on
 Fix       : Pin shellcheck and shfmt (dev extras), run both on phasectl's own shell in CI, fix the findings. scripts/hooks/ is vendored from eng-principles 74e7e76 and is not edited here: its lint and format belong upstream (shellcheck 0.11.0 reports SC2034 at scripts/hooks/pre-push:32).
 When      : 2026-11-23
 Status    : RESOLVED — shellcheck 0.11.0.1 (shellcheck-py) and shfmt 3.14.1 (shfmt-py 4.2.0) pinned in pyproject.toml; .github/workflows/ci.yml job `shell-lint` runs both on scripts/field-test.sh; SC1007 fixed (`CDPATH=''`) and the file formatted (shfmt -i 4 -ci -sr, eng-principles' flags). SC2034 in the vendored pre-push is reported upstream and fixed in eng-principles PR #21 (open); re-vendoring after it merges is a separate phasectl change. Making `shell-lint` a required check is a ruleset change for the governor (ENG-STD-005 §2.2); until then CI runs it on every PR without blocking merge
+Anchor    : DECISION-001
+
+### V-ENG-008-01
+SPEC says : ENG-STD-008 check `security` (MUST; OpenSSF Best Practices vulnerability_report_process) — a SECURITY.md with a private way to report a vulnerability.
+Code does : No SECURITY.md. Private vulnerability reporting is enabled on the repository (`gh api repos/praveenprk/phasectl/private-vulnerability-reporting`: enabled, 2026-11-25), but nothing tells a reporter to use it.
+Severity  : HIGH (audit: security floor; Scorecard Security-Policy)
+Impact    : A reporter may open a public issue and disclose a vulnerability before a fix.
+Fix       : SECURITY.md: private vulnerability reporting first, the maintainer's email as fallback (as factory-protocol), scope and response time.
+When      : 2026-11-25
+Status    : RESOLVED — SECURITY.md added in this change
 Anchor    : DECISION-001
