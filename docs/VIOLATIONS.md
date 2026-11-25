@@ -25,6 +25,7 @@
 | V-ENG-006-02 | ENG-STD-006 §2.4 | HIGH (proposed) | RESOLVED |
 | V-ENG-004-03 | ENG-STD-004 §0, §6.1 | HIGH | RESOLVED |
 | V-ENG-008-01 | ENG-STD-008 security | HIGH | RESOLVED |
+| V-ENG-008-06 | ENG-STD-008 changelog | HIGH | RESOLVED |
 
 ---
 
@@ -126,4 +127,14 @@ Impact    : A reporter may open a public issue and disclose a vulnerability befo
 Fix       : SECURITY.md: private vulnerability reporting first, the maintainer's email as fallback (as factory-protocol), scope and response time.
 When      : 2026-11-25
 Status    : RESOLVED — SECURITY.md added in this change
+Anchor    : DECISION-001
+
+### V-ENG-008-06
+SPEC says : ENG-STD-008 check `changelog` (MUST; Keep a Changelog 1.1.0, OpenSSF Best Practices release_notes) — a CHANGELOG.
+Code does : No CHANGELOG.md. Changes since v0.1.0 are only in commit and pull request history.
+Severity  : HIGH (audit: OpenSSF BP MUST release_notes)
+Impact    : Users cannot see what changed between releases without reading git history.
+Fix       : CHANGELOG.md in Keep a Changelog format, backfilled from v0.1.0 (2026-08-02) and merged pull requests #2–#24.
+When      : 2026-11-26
+Status    : RESOLVED — CHANGELOG.md added in this change
 Anchor    : DECISION-001
