@@ -107,7 +107,7 @@ Risk    : Verbatim context is larger than a summary. Sessions can exceed a
           new session. Raw history may be read by a model as current state;
           it is labelled historical, and CURRENT_GIT_STATE stays the
           authority (DECISION-005).
-Status  : PROPOSED
+Status  : ACCEPTED (governor, 2026-11-26)
 
 ---
 
@@ -144,4 +144,4 @@ Risk    : A contributor answers its own question, so a weak Recommend
           exclusions keep security merges, settings and tags with the
           governor; and the governor may withdraw the rule by superseding
           this entry.
-Status  : PROPOSED (backfilled; in effect since 2026-11-25 by the governor's instruction, pending governor acceptance)
+Status  : ACCEPTED (governor, 2026-11-26; backfilled, in effect since 2026-11-25)
