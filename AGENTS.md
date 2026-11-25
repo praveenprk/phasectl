@@ -14,4 +14,12 @@ phasectl follows eng-principles (docs/DECISIONS.md DECISION-001).
 - A violation fix updates docs/VIOLATIONS.md in the same commit.
 - Do not mark anything `conformant` in the ICS without a cited test or commit.
 - Codebase rule (DECISION-002): phasectl never writes to the user's codebase. Do not add code that does.
-- Only the maintainer pushes to `main` and merges.
+- Roles (eng-principles ENG-STD-005 §2.6, ENG-DEC-012), effective when the `stable`
+  branch exists. Until then only the maintainer pushes to `main` and merges.
+  Merge into `main`: an automated contributor merges its pull request, by rebase
+  (linear history), once every required check passes, no Q-NNN in
+  docs/QUESTIONS.md is OPEN, and the pull request is not labelled `security`; a
+  `security` pull request waits for the governor, who merges it. Push to `main`:
+  nobody; every change arrives by pull request. Promote `main` → `stable`: the
+  governor, by a pull request merged with a merge commit, on a release record
+  (Q-001). Tag: the governor, on `stable` only.
