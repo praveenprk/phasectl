@@ -19,7 +19,9 @@ phasectl follows eng-principles (docs/DECISIONS.md DECISION-001).
   Merge into `main`: an automated contributor merges its pull request, by rebase
   (linear history), once every required check passes, no Q-NNN in
   docs/QUESTIONS.md is OPEN, and the pull request is not labelled `security`; a
-  `security` pull request waits for the governor, who merges it. Push to `main`:
+  `security` pull request waits for the governor, who merges it. A pull request
+  that records an answer under the standing rule (DECISION-007) is merged by the
+  governor, as a security-related change is. Push to `main`:
   nobody; every change arrives by pull request. Promote `main` → `stable`: the
   governor, by a pull request merged with a merge commit, on a release record
   (Q-001). Tag: the governor, on `stable` only.

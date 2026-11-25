@@ -108,3 +108,40 @@ Risk    : Verbatim context is larger than a summary. Sessions can exceed a
           it is labelled historical, and CURRENT_GIT_STATE stays the
           authority (DECISION-005).
 Status  : PROPOSED
+
+---
+
+## DECISION-007 — A contributor's own questions are answered by their Recommend option
+
+Date    : 2026-11-25
+Refs    : docs/QUESTIONS.md; Q-001; eng-principles ENG-DEC-010, ENG-DEC-012,
+          ENG-STD-005 §2.5; fid DECISION-010; factory-protocol DECISION-006
+Decision: On 2026-11-25 the governor directed that, for each question a
+          contributor raises in docs/QUESTIONS.md, its Recommend option is
+          taken as the governor's answer and recorded, in the same pull
+          request, as
+          `ANSWERED (governor, standing rule 2026-11-25): <option>`,
+          followed by any DECISION entry that answer needs.
+          The rule covers only questions the contributor raises in that
+          pull request, not OPEN entries raised by others. It does not
+          cover merging `security`-labelled pull requests, changing
+          repository or host settings (rulesets, branches, labels), or
+          creating or signing tags: those stay with the governor.
+          A pull request that records an answer under this rule is merged
+          by the governor, as a security-related change is. This mirrors
+          fid DECISION-010 and factory-protocol DECISION-006.
+Reason  : Routine judgments should not block merges into `main` while the
+          governor is away (`commit-check / questions`). The rule was given
+          only in a working session, and Q-001 is the first answer recorded
+          under it. This entry puts its authority where a reader of
+          docs/QUESTIONS.md can find it.
+Risk    : A contributor answers its own question, so a weak Recommend
+          becomes the answer. Once `stable` exists, an agent could otherwise
+          raise a question, answer it and merge the pull request
+          unreviewed. Bounded by: such a pull request is merged only by the
+          governor; the answer is visible in the pull request and the
+          register; the governor can overrule it by a later entry; the
+          exclusions keep security merges, settings and tags with the
+          governor; and the governor may withdraw the rule by superseding
+          this entry.
+Status  : PROPOSED (backfilled; in effect since 2026-11-25 by the governor's instruction, pending governor acceptance)
