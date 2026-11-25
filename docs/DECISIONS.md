@@ -145,3 +145,33 @@ Risk    : A contributor answers its own question, so a weak Recommend
           governor; and the governor may withdraw the rule by superseding
           this entry.
 Status  : ACCEPTED (governor, 2026-11-26; backfilled, in effect since 2026-11-25)
+
+---
+
+## DECISION-008 — An agent merges a pull request that only records a first-hand governor acceptance
+
+Date    : 2026-11-26
+Refs    : DECISION-007; AGENTS.md Roles; eng-principles ENG-DEC-012,
+          ENG-STD-005 §2.6; #25
+Decision: A pull request whose only change records something the governor
+          has already accepted first-hand, such as a decision's acceptance
+          or a question's answer, may be merged by an automated contributor
+          once every required check passes and the reviewing session's
+          review is ok. A pull request labelled `security` still waits for
+          the governor. The acceptance must have been given by the governor
+          directly, not relayed between sessions, and the pull request names
+          where it was given.
+          This narrows DECISION-007's safeguard for one case. An answer
+          that a contributor records under the standing rule is not a
+          first-hand acceptance, so that pull request is still merged by
+          the governor.
+Reason  : Recording an acceptance the governor has already given adds no
+          new judgment. Waiting for the governor to merge it only delays
+          the register (#25). The governor asked on 2026-11-26 for the rule
+          to be recorded in each repository; engineering-fa relayed the
+          request.
+Risk    : An agent could claim an acceptance the governor never gave.
+          Bounded by: the pull request names where the acceptance was
+          given; the reviewing session checks it; the change is limited to
+          recording it; and the governor can revert or supersede it.
+Status  : PROPOSED (relayed by engineering-fa from the governor, 2026-11-26; pending the governor's first-hand acceptance or merge)
