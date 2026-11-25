@@ -21,4 +21,25 @@ Format:
 
 ---
 
-No questions yet.
+### Q-001
+Scenario : The governor releases phasectl after the move to `main` and
+           `stable`. `main` keeps linear history: pull requests merge by
+           rebase and the ruleset requires it. The governor now opens a
+           `main` → `stable` pull request to promote the release, and has to
+           choose how it lands on `stable`.
+Options  : A — Merge commit: `stable` gets one merge commit per promotion,
+               whose second parent is the `main` commit released. `main`
+               stays linear because nothing merges back into it. The `stable`
+               ruleset allows Merge only and does not require linear history.
+               Same as eng-principles and factory-protocol (ENG-DEC-012).
+           B — Linear `stable`: `stable` is fast-forwarded to the released
+               `main` commit, so both branches stay linear and share commits.
+               GitHub pull requests cannot fast-forward, so the governor
+               pushes `stable` directly. Its ruleset needs the governor as
+               a bypass actor, and the promotion has no pull request.
+Recommend: A, because the promotion stays a reviewed pull request with
+           required checks, each merge commit marks exactly one release on
+           `stable`, it matches the other repositories, and the linear-history
+           rule still holds where it matters: on `main`, where work lands.
+Raised by: this pull request (docs/ENG-DEC-012-main-stable-roles)
+Status   : ANSWERED (governor, standing rule 2026-11-25): A → no change (applies ENG-DEC-012)

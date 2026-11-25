@@ -43,6 +43,11 @@ scripts/hooks/install   # sets core.hooksPath; scripts/hooks/test runs the hook 
   `fix(graph): report graph store failures on close — V-ENG-004-01`.
 - Every anchor must exist in a register. No co-author lines.
 - `main` is protected: open a PR. Only the maintainer merges.
+- **Merging** (AGENTS.md: Roles), effective when the `stable` branch exists:
+  a pull request merges into `main` by rebase once every required check passes
+  and no question in docs/QUESTIONS.md is OPEN. A pull request labelled
+  `security` waits for the governor. The governor promotes `main` → `stable`
+  with a merge commit and tags releases there.
 
 ## Add a phase
 
@@ -90,4 +95,7 @@ tool-call format are documented at the top of `provider.py`.
 
 ## Release
 
-Tag `vX.Y.Z` on `main`; the tag is the release.
+Tag `vX.Y.Z` on `main`; the tag is the release. Effective when the `stable`
+branch exists: the governor promotes `main` → `stable` with a merge commit, on a
+release record (eng-principles ENG-STD-005 §2.6), and tags `vX.Y.Z` on `stable`
+only.
