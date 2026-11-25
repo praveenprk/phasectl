@@ -8,6 +8,9 @@ questions` job (eng-principles hooks/check-questions, run through
 .github/workflows/commit-check.yml) fails while any entry is OPEN. An
 answer that changes phasectl's behaviour or policy becomes a DECISION entry
 in docs/DECISIONS.md. Entries are never deleted (ENG-STD-006 §2.1).
+A question a contributor raises is answered by its Recommend option under the
+governor's standing rule (DECISION-007); a pull request that records such an
+answer is merged by the governor, as a security-related change is.
 
 Format:
 
@@ -42,4 +45,4 @@ Recommend: A, because the promotion stays a reviewed pull request with
            `stable`, it matches the other repositories, and the linear-history
            rule still holds where it matters: on `main`, where work lands.
 Raised by: this pull request (docs/ENG-DEC-012-main-stable-roles)
-Status   : ANSWERED (governor, standing rule 2026-11-25): A → no change (applies ENG-DEC-012)
+Status   : ANSWERED (governor, standing rule 2026-11-25): A → no change (applies ENG-DEC-012; DECISION-007)

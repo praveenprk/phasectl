@@ -46,7 +46,8 @@ scripts/hooks/install   # sets core.hooksPath; scripts/hooks/test runs the hook 
 - **Merging** (AGENTS.md: Roles), effective when the `stable` branch exists:
   a pull request merges into `main` by rebase once every required check passes
   and no question in docs/QUESTIONS.md is OPEN. A pull request labelled
-  `security` waits for the governor. The governor promotes `main` → `stable`
+  `security` waits for the governor, and so does one that records an answer
+  under the standing rule (DECISION-007). The governor promotes `main` → `stable`
   with a merge commit and tags releases there.
 
 ## Add a phase
