@@ -3,6 +3,11 @@ from .graph import GraphStore, extract_decision_references
 from .provider import DEFAULT_COMPRESS_PROMPT, get_provider
 from .tools import ToolExecutor
 
+_TOOLLESS_PHASE_GUARDRAIL = (
+    "\n\nYou have no tools in this phase. Do not write command output, file contents, "
+    "tool calls, or anything that looks like tool use; say what you would check instead."
+)
+
 
 def chat(
     messages: list[dict],
@@ -22,6 +27,9 @@ def chat(
     tool_executor = ToolExecutor(project=project)
     tools = tool_executor.get_tools_for_phase(phase_config.name, app_config)
     tools_available = len(tools)
+    system_prompt = phase_config.system_prompt
+    if not tools:
+        system_prompt += _TOOLLESS_PHASE_GUARDRAIL
 
     try:
         round_ix = 0
@@ -29,7 +37,7 @@ def chat(
             if on_round is not None:
                 on_round(round_ix, tools_available)
             text, tool_calls = provider.chat(
-                system=phase_config.system_prompt,
+                system=system_prompt,
                 messages=messages,
                 tools=tools if tools else None,
                 temperature=phase_config.temperature,
