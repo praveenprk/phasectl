@@ -72,6 +72,9 @@ from .session import close_session, load_prior_session, open_session
 from .store import SQLiteStore
 from .tools import ToolExecutor
 
+_UNVERIFIED_TOOL_USE_ORIGIN = "assistant_unverified_tool_use"
+_TOOL_USE_MARKERS = ("<tool_call>", "<tool_response>", "<function_calls>", "<invoke")
+
 
 def _provider_label(config: dict) -> str:
     p = config.get("provider") or {}
@@ -830,13 +833,17 @@ def chat(
 
     progress.step("receiving response...")
 
+    origin = "assistant"
+    if not _tools_available and any(marker in response for marker in _TOOL_USE_MARKERS):
+        origin = _UNVERIFIED_TOOL_USE_ORIGIN
+
     store.add_turn(
         session_id=session_data["id"],
         phase=current_phase,
         role="assistant",
         content=response,
         token_estimate=estimate_tokens(response),
-        origin="assistant",
+        origin=origin,
     )
 
     all_turns = store.get_turns(session_data["id"])
@@ -940,12 +947,20 @@ def close(
 
     if summarize:
         _warn("warning: snapshot summary may cause signal loss due to compression")
+        summary_turns = [
+            turn for turn in turns if turn.get("origin") != _UNVERIFIED_TOOL_USE_ORIGIN
+        ]
+        excluded = len(turns) - len(summary_turns)
         turns_text = (
-            "\n\n".join(f"[{t['phase']}][{t['role']}]: {t['content']}" for t in turns)
+            "\n\n".join(
+                f"[{t['phase']}][{t['role']}]: {t['content']}" for t in summary_turns
+            )
             or "No turns in this session."
         )
+        if excluded:
+            turns_text += f"\n\n{excluded} turns were excluded as unverified."
         progress.step(
-            f"summarizing {len(turns)} turns via {_compression_label(config)}..."
+            f"summarizing {len(summary_turns)} turns via {_compression_label(config)}..."
         )
         try:
             model_summary = api_compress(
