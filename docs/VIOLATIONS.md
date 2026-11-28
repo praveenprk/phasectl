@@ -36,6 +36,7 @@ Severity  : HIGH
 Impact    : Tests (tests/test_*_v0.py) have no SPEC invariants to trace to. A behaviour change cannot be checked against a contract.
 Fix       : Backfill (ENG-STD-002 §4.1): write an RFC and SPEC per command surface, honestly describing current behaviour. Start with `close` (session snapshot + graph), then `start`/resume. Then map existing tests to INV ids.
 When      : Before the next feature.
+Unmapped  : 5 legacy tests verify behaviour no SPEC states yet: tests/test_resume_grounding.py::test_resume_block_grounds_current_branch_in_live_git, tests/test_resume_grounding.py::test_resume_block_separates_authoritative_git_state_from_synthesis, tests/test_toolless_guard.py::test_toolless_phase_prompt_contains_guardrail, tests/test_toolless_guard.py::test_flagged_turn_is_excluded_from_close_input, tests/test_toolless_guard.py::test_normal_turn_is_included_in_close_input
 Status    : OPEN
 Anchor    : DECISION-001
 
