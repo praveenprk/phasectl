@@ -65,3 +65,17 @@ Recommend: A, because the default only works on one machine, names a private
            discover the flag by failing.
 Raised by: this pull request (chore/DECISION-001-cleanup)
 Status   : ANSWERED (governor, standing rule 2026-11-25): A → no change (DECISION-007)
+
+### Q-003
+Scenario : A user runs `phasectl close`. The session is stored, but the graph
+           store cannot be opened or a graph write fails.
+Options  : A — Print `warning: session graph not updated: <exception class>: <message>`
+           on stderr, exit 0, and keep the one stdout line. The session is
+           closed and SQLite holds it.
+           B — Print the same message as `error: …` and exit 1. The session is
+           already closed, so re-running `close` cannot retry.
+Recommend: A, because the session's record is already safe in SQLite, a
+           non-zero exit would report a close that succeeded as failed, and
+           re-running cannot recover.
+Raised by: this pull request (ns/phasectl-v00401-graph-warning)
+Status   : ANSWERED (governor, standing rule 2026-11-25): A → no change (DECISION-007)

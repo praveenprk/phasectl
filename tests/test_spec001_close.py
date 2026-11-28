@@ -5,6 +5,7 @@ import re
 import pytest
 from typer.testing import CliRunner
 
+from phasectl.api import persist_session_graph
 from phasectl.cli import app
 from phasectl.context import estimate_tokens
 from phasectl.session import open_session
@@ -350,3 +351,55 @@ def test_inv_001_11_stdout_line(env, monkeypatch):
     assert len(lines) == 1
     match = re.fullmatch(r"([0-9a-f]{8}) (\d+)→1 (\d+)t", lines[0])
     assert match and match.group(1) == session.id[:8] and match.group(2) == "3"
+
+
+@pytest.mark.parametrize("failure_stage", ["open", "write", "close"])
+def test_inv_001_12_graph_failure_warns(env, monkeypatch, failure_stage):
+    store, _, _ = env
+    session = open_session(store, "proj", "design")
+    _add(store, session.id, "user", "DECISION-001")
+    monkeypatch.setattr("phasectl.cli.persist_session_graph", persist_session_graph)
+
+    if failure_stage == "open":
+
+        def failing_graph_store(*args):
+            raise RuntimeError("cannot open graph")
+
+    elif failure_stage == "write":
+
+        class FailingGraphStore:
+            def save_session_node(self, *args):
+                raise RuntimeError("cannot write graph")
+
+            def close(self):
+                pass
+
+        def failing_graph_store(*args):
+            return FailingGraphStore()
+
+    else:
+
+        class CloseFailingGraphStore:
+            def save_session_node(self, *args):
+                pass
+
+            def save_decision(self, *args):
+                pass
+
+            def link_session_decision(self, *args):
+                pass
+
+            def close(self):
+                raise RuntimeError("cannot close graph")
+
+        def failing_graph_store(*args):
+            return CloseFailingGraphStore()
+
+    monkeypatch.setattr("phasectl.api.GraphStore", failing_graph_store)
+
+    result = _close()
+
+    assert result.exit_code == 0, result.output
+    assert store.get_session(session.id)["closed_at"] is not None
+    assert "warning: session graph not updated:" in result.stderr
+    assert len(result.stdout.splitlines()) == 1

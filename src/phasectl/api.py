@@ -1,3 +1,5 @@
+import sys
+
 from .config import get_graph_path
 from .graph import GraphStore, extract_decision_references
 from .provider import DEFAULT_COMPRESS_PROMPT, get_provider
@@ -102,26 +104,38 @@ def persist_session_graph(
     created_at: str,
     app_config: dict,
 ) -> None:
-    store = _get_graph_store(app_config)
-    if not store:
-        return
-
-    store.save_session_node(session_id, project, created_at)
-
-    rfcs, decisions = extract_rfcs_and_decisions(summary)
-    for rfc_id in rfcs:
-        store.save_rfc(rfc_id, project, "in-progress", "")
-        store.link_session_rfc(session_id, rfc_id)
-
-    for decision_id in decisions:
-        store.save_decision(decision_id, project, "")
-        store.link_session_decision(session_id, decision_id)
-
-    store.close()
-
-
-def _get_graph_store(app_config: dict) -> GraphStore | None:
+    store = None
+    warned = False
     try:
-        return GraphStore(str(get_graph_path(app_config)))
-    except Exception:
-        return None
+        store = _get_graph_store(app_config)
+        store.save_session_node(session_id, project, created_at)
+
+        rfcs, decisions = extract_rfcs_and_decisions(summary)
+        for rfc_id in rfcs:
+            store.save_rfc(rfc_id, project, "in-progress", "")
+            store.link_session_rfc(session_id, rfc_id)
+
+        for decision_id in decisions:
+            store.save_decision(decision_id, project, "")
+            store.link_session_decision(session_id, decision_id)
+    except Exception as e:
+        print(
+            f"warning: session graph not updated: {type(e).__name__}: {e}",
+            file=sys.stderr,
+        )
+        warned = True
+        return
+    finally:
+        if store is not None:
+            try:
+                store.close()
+            except Exception as e:
+                if not warned:
+                    print(
+                        f"warning: session graph not updated: {type(e).__name__}: {e}",
+                        file=sys.stderr,
+                    )
+
+
+def _get_graph_store(app_config: dict) -> GraphStore:
+    return GraphStore(str(get_graph_path(app_config)))
