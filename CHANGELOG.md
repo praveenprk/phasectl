@@ -22,11 +22,17 @@ from the merged pull requests and the v0.1.0 tag.
   3.13, hook tests, shellcheck and shfmt (#17, #18).
 
 ### Changed
+- `scripts/field-test.sh` needs the repository under test named with
+  `--repo` or `PHASECTL_FIELD_REPO`; it has no default path (Q-002).
 - Context is lossless by default for `close`, `start` and `chat`. A model
   rewrite runs only with `--summarize` or `--compress`, warns on stderr and
   sits next to the verbatim source (DECISION-006, #15).
 - Resume context is grounded in deterministic git state (#7).
 - The indexer is a plain binary on `PATH`, not an MCP server (#2).
+
+### Removed
+- `docs/internal/` (pre-RFC design drafts that were out of date) and the
+  parked `docs/opencode-support.md` note.
 
 ### Fixed
 - Session snapshots keep the original turns (#8) and decision references (#9).

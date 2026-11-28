@@ -2,7 +2,7 @@
 set -uo pipefail
 
 ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
-REPO="${PHASECTL_FIELD_REPO:-$HOME/Desktop/contextos}"
+REPO="${PHASECTL_FIELD_REPO:-}"
 OUTPUT="${PHASECTL_FIELD_OUTPUT:-$ROOT/.field-test}"
 PYTHON="${PHASECTL_FIELD_PYTHON:-}"
 
@@ -38,6 +38,12 @@ while (($#)); do
             ;;
     esac
 done
+
+if [[ -z "$REPO" ]]; then
+    printf 'field-test: name the repository with --repo PATH or PHASECTL_FIELD_REPO\n' >&2
+    usage >&2
+    exit 2
+fi
 
 if [[ -z "$PYTHON" ]]; then
     if [[ -x "$ROOT/.venv/bin/python" ]]; then

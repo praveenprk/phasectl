@@ -31,7 +31,7 @@
 
 ### V-ENG-002-01
 SPEC says : ENG-STD-002 §1.1 — "All work passes through five gates, in order." A SPEC precedes TEST and BUILD.
-Code does : No RFC or SPEC exists for any shipped behaviour. Design lives in docs/internal/DESIGN.md and ARCHITECTURE.md, which are not gated specs with falsifiable invariants.
+Code does : No RFC or SPEC exists for any shipped behaviour. Design lived in docs/internal/DESIGN.md and ARCHITECTURE.md (since removed), which are not gated specs with falsifiable invariants.
 Severity  : HIGH
 Impact    : Tests (tests/test_*_v0.py) have no SPEC invariants to trace to. A behaviour change cannot be checked against a contract.
 Fix       : Backfill (ENG-STD-002 §4.1): write an RFC and SPEC per command surface, honestly describing current behaviour. Start with `close` (session snapshot + graph), then `start`/resume. Then map existing tests to INV ids.
@@ -44,7 +44,7 @@ SPEC says : ENG-STD-004 §4.1 — "Errors MUST NOT be silently swallowed." ENG-P
 Code does : src/phasectl/api.py:108-112 `_get_graph_store` catches every `Exception` and returns None. `persist_session_graph` then returns silently. `phasectl close` reports success while the graph was never updated.
 Severity  : HIGH
 Impact    : The session graph silently diverges from SQLite. `phasectl graph` under-reports linked RFCs and DECISIONs without any signal.
-Fix       : Per docs/internal/DECISION-CONTINUITY-FOLLOWUPS.md: define failure reporting and reconciliation before changing persistence order. A minimum first step is to report the failure on stderr with a non-zero exit, or a warning, and leave SQLite as the source record.
+Fix       : `close` commits to SQLite before the graph write and the two share no transaction, so a graph failure after the commit leaves the graph partial, and re-running `close` cannot recover a closed session. Reversing the order only inverts the failure window, and a killed process can leave either partial state. So define failure reporting and a retry, reconciliation or compensation strategy before changing persistence order. The original SQLite turns stay the source record for rebuilding the graph. A minimum first step is to report the failure on stderr with a non-zero exit, or a warning, and leave SQLite as the source record.
 When      : With the `close` SPEC (V-ENG-002-01).
 Status    : OPEN
 Anchor    : DECISION-001
@@ -71,7 +71,7 @@ Anchor    : DECISION-001
 
 ### V-ENG-006-01
 SPEC says : ENG-STD-006 §1 — every project MUST keep DECISIONS, VIOLATIONS, and an ICS.
-Code does : None existed. One follow-up note lived in docs/internal/DECISION-CONTINUITY-FOLLOWUPS.md.
+Code does : None existed. One follow-up note lived in docs/internal/DECISION-CONTINUITY-FOLLOWUPS.md (since folded into V-ENG-004-01).
 Severity  : HIGH
 Impact    : Decisions and known defects are not discoverable from one place.
 Fix       : Create docs/DECISIONS.md (with backfilled DECISION-002..005), this register, and docs/conformance/phasectl-ICS.md.

@@ -67,7 +67,9 @@ def _message_text(event: dict) -> str:
 
 def test_field_runner() -> None:
     started = time.monotonic()
-    repo = Path(os.environ.get("PHASECTL_FIELD_REPO", "~/Desktop/contextos")).expanduser().resolve()
+    if not os.environ.get("PHASECTL_FIELD_REPO"):
+        raise ValueError("set PHASECTL_FIELD_REPO to the repository under test")
+    repo = Path(os.environ["PHASECTL_FIELD_REPO"]).expanduser().resolve()
     output = Path(os.environ.get("PHASECTL_FIELD_OUTPUT", ROOT / ".field-test")).expanduser().resolve()
     if output == repo or repo in output.parents:
         raise ValueError("field-test output must not be inside the external repository")

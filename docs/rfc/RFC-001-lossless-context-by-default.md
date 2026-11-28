@@ -3,8 +3,7 @@ Status: OPEN (no open questions; closes on governor approval) · Date: 2026-11-0
 
 ## Problem
 
-phasectl's value is continuity and authority across sessions (DECISION-005,
-docs/internal/DESIGN.md). Today, four steps on the default path ask a model
+phasectl's value is continuity and authority across sessions (DECISION-005). Today, four steps on the default path ask a model
 to rewrite context before the next session or the next request sees it:
 
 | Step | Where | What a model rewrites |
