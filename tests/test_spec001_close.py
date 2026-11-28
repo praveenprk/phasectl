@@ -353,7 +353,7 @@ def test_inv_001_11_stdout_line(env, monkeypatch):
     assert match and match.group(1) == session.id[:8] and match.group(2) == "3"
 
 
-@pytest.mark.parametrize("failure_stage", ["open", "write"])
+@pytest.mark.parametrize("failure_stage", ["open", "write", "close"])
 def test_inv_001_12_graph_failure_warns(env, monkeypatch, failure_stage):
     store, _, _ = env
     session = open_session(store, "proj", "design")
@@ -365,7 +365,7 @@ def test_inv_001_12_graph_failure_warns(env, monkeypatch, failure_stage):
         def failing_graph_store(*args):
             raise RuntimeError("cannot open graph")
 
-    else:
+    elif failure_stage == "write":
 
         class FailingGraphStore:
             def save_session_node(self, *args):
@@ -376,6 +376,24 @@ def test_inv_001_12_graph_failure_warns(env, monkeypatch, failure_stage):
 
         def failing_graph_store(*args):
             return FailingGraphStore()
+
+    else:
+
+        class CloseFailingGraphStore:
+            def save_session_node(self, *args):
+                pass
+
+            def save_decision(self, *args):
+                pass
+
+            def link_session_decision(self, *args):
+                pass
+
+            def close(self):
+                raise RuntimeError("cannot close graph")
+
+        def failing_graph_store(*args):
+            return CloseFailingGraphStore()
 
     monkeypatch.setattr("phasectl.api.GraphStore", failing_graph_store)
 

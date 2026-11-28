@@ -105,6 +105,7 @@ def persist_session_graph(
     app_config: dict,
 ) -> None:
     store = None
+    warned = False
     try:
         store = _get_graph_store(app_config)
         store.save_session_node(session_id, project, created_at)
@@ -122,10 +123,18 @@ def persist_session_graph(
             f"warning: session graph not updated: {type(e).__name__}: {e}",
             file=sys.stderr,
         )
+        warned = True
         return
     finally:
         if store is not None:
-            store.close()
+            try:
+                store.close()
+            except Exception as e:
+                if not warned:
+                    print(
+                        f"warning: session graph not updated: {type(e).__name__}: {e}",
+                        file=sys.stderr,
+                    )
 
 
 def _get_graph_store(app_config: dict) -> GraphStore:

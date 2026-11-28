@@ -46,7 +46,7 @@ Severity  : HIGH
 Impact    : The session graph silently diverges from SQLite. `phasectl graph` under-reports linked RFCs and DECISIONs without any signal.
 Fix       : `close` commits to SQLite before the graph write and the two share no transaction, so a graph failure after the commit leaves the graph partial, and re-running `close` cannot recover a closed session. Reversing the order only inverts the failure window, and a killed process can leave either partial state. So define failure reporting and a retry, reconciliation or compensation strategy before changing persistence order. The original SQLite turns stay the source record for rebuilding the graph. A minimum first step is to report the failure on stderr with a non-zero exit, or a warning, and leave SQLite as the source record.
 When      : With the `close` SPEC (V-ENG-002-01).
-Done      : e13143a: close warns on stderr when the graph update fails (INV-001-12, Q-003). Reconciliation of a partial graph is still open.
+Done      : #31: close warns on stderr when the graph update fails (INV-001-12, Q-003). Reconciliation of a partial graph is still open.
 Status    : OPEN
 Anchor    : DECISION-001
 
