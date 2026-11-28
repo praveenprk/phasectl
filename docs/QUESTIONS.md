@@ -46,3 +46,22 @@ Recommend: A, because the promotion stays a reviewed pull request with
            rule still holds where it matters: on `main`, where work lands.
 Raised by: this pull request (docs/ENG-DEC-012-main-stable-roles)
 Status   : ANSWERED (governor, standing rule 2026-11-25): A → no change (applies ENG-DEC-012; DECISION-007)
+
+### Q-002
+Scenario : A contributor runs the field test (`scripts/field-test.sh`, or
+           the runner in tests/field) to check phasectl against a real
+           repository. Until now the runner fell back to a fixed path, a
+           private project on the maintainer's machine, when no repository
+           was named.
+Options  : A — No default: the contributor names the repository with
+               `--repo PATH` or `PHASECTL_FIELD_REPO`. Without one, the
+               script prints how to name it and exits 2, and the runner
+               raises an error. The private project's name leaves the repo.
+           B — Keep the default path: it works with no arguments on the
+               maintainer's machine and fails with "external repository does
+               not exist" everywhere else.
+Recommend: A, because the default only works on one machine, names a private
+           project in a public repository, and makes every other contributor
+           discover the flag by failing.
+Raised by: this pull request (chore/DECISION-001-cleanup)
+Status   : ANSWERED (governor, standing rule 2026-11-25): A → no change (DECISION-007)

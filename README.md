@@ -279,7 +279,6 @@ secret-service) or a chmod-600 file. Environment variable override for CI.
 - `docs/phasectl.1` — full man page (`man ./docs/phasectl.1`)
 - `phasectl --help`, `phasectl COMMAND --help`
 - `CONTRIBUTING.md` — how to develop, add a phase, add a provider
-- `docs/internal/` — architecture and design notes (development artifacts)
 
 ## License
 
