@@ -40,9 +40,9 @@ INV-001-08 — Graph links (RFC and DECISION nodes) MUST be computed from the de
 INV-001-09 — With `--summarize`, a model failure MUST exit 2 and leave the session active with nothing stored. Verified by: test_inv_001_09_summarize_failure_keeps_session_open
 INV-001-10 — No active session MUST exit 3 with `No active session to close.` on stderr. Verified by: test_inv_001_10_no_active_session
 INV-001-11 — Stdout MUST be exactly one line, `<session-id-8> <turns>→1 <tokens>t`, where `<turns>` counts stored turns outside phase `_compression`. Verified by: test_inv_001_11_stdout_line
+INV-001-12 — If the graph store cannot be opened or a graph write fails, `close` MUST still exit 0 with the session closed in SQLite, MUST print `warning: session graph not updated: <error>` on stderr, and MUST keep stdout to the one line of INV-001-11. Verified by: test_inv_001_12_graph_failure_warns
 
 ## Out of scope
-- Silent graph-store failure on close (V-ENG-004-01).
 - What the snapshot is used for at the next `start` (SPEC-002).
 - The `compress` command and `loose --synthesize` (already explicit commands; covered by DECISION-006 in a later change).
 - Whether a model reports the snapshot's provenance correctly.
